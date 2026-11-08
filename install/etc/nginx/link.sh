@@ -42,6 +42,15 @@ if ! isValidSymlink $WLANPI_WEBUI; then
     ln -s /etc/wlanpi-webui/nginx/sites-enabled/wlanpi_webui.conf $WLANPI_WEBUI
 fi
 
+WLANPI_MENUD=/etc/wlanpi-webui/nginx/conf.d/wlanpi-menud.conf
+mkdir -p /etc/wlanpi-webui/nginx/conf.d
+if [ -f /etc/wlanpi-webui/nginx/conf-available/wlanpi-menud.conf ] && { dpkg-query -W -f='${Status}' wlanpi-menud 2>/dev/null | grep -q "ok installed" || [ -f /etc/wlanpi-menud/config.toml ]; }; then
+    if ! isValidSymlink $WLANPI_MENUD; then
+        echo "Linking wlanpi-menud.conf snippet..."
+        ln -s /etc/wlanpi-webui/nginx/conf-available/wlanpi-menud.conf $WLANPI_MENUD
+    fi
+fi
+
 nginx -t
 
 systemctl restart nginx.service

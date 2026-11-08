@@ -186,6 +186,14 @@ class TestAuthCheck:
         _login(client, monkeypatch)
         assert client.get("/auth/check").status_code == 200
 
+    def test_authenticated_headers(self, client, monkeypatch):
+        _login(client, monkeypatch)
+        resp = client.get("/auth/check")
+        assert resp.status_code == 200
+        assert resp.headers.get("X-WebUI-User") == "wlanpi"
+        assert resp.headers.get("X-WebUI-Session") is not None
+        assert len(resp.headers.get("X-WebUI-Session")) > 10
+
 
 class TestLogout:
     def test_logout_clears_session(self, client, monkeypatch):
@@ -201,6 +209,27 @@ class TestLogout:
         _login(client, monkeypatch)
         assert client.post("/logout", data={"csrf_token": "x"}).status_code == 400
         assert client.get("/auth/check").status_code == 200
+
+    def test_logout_notifies_menud_best_effort(self, client, monkeypatch):
+        calls = []
+        monkeypatch.setattr("wlanpi_webui.auth.auth.revoke_menu_session", lambda sid: calls.append(sid))
+        _login(client, monkeypatch)
+        with client.session_transaction() as sess:
+            sid = sess["sid"]
+            csrf = sess["csrf_token"]
+        resp = client.post("/logout", data={"csrf_token": csrf})
+        assert resp.status_code == 302
+        assert calls == [sid]
+
+    def test_logout_when_menud_raises(self, client, monkeypatch):
+        def blow_up(sid):
+            raise RuntimeError("menud crashed")
+        monkeypatch.setattr("wlanpi_webui.auth.auth.revoke_menu_session", blow_up)
+        _login(client, monkeypatch)
+        with client.session_transaction() as sess:
+            csrf = sess["csrf_token"]
+        resp = client.post("/logout", data={"csrf_token": csrf})
+        assert resp.status_code == 302
 
 
 class TestMutatingRoutes:

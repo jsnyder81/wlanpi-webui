@@ -1,6 +1,7 @@
 /install/etc/nginx/nginx.conf /etc/wlanpi-webui/nginx
 /install/etc/nginx/wlanpi_librespeed.conf /etc/wlanpi-webui/nginx/sites-enabled
 /install/etc/nginx/wlanpi_webui.conf /etc/wlanpi-webui/nginx/sites-enabled
+/install/etc/nginx/conf.d/wlanpi-menud.conf /etc/wlanpi-webui/nginx/conf-available
 /install/etc/nginx/link.sh /etc/wlanpi-webui/scripts
 /install/etc/nginx/unlink.sh /etc/wlanpi-webui/scripts
 /install/etc/nginx/fixpermissions.sh /etc/wlanpi-webui/scripts

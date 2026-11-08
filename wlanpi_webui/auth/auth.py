@@ -26,6 +26,7 @@ from pathlib import Path
 
 import requests
 from flask import (
+    Response,
     abort,
     current_app,
     redirect,
@@ -37,6 +38,7 @@ from flask import (
 
 from wlanpi_webui.auth import bp
 from wlanpi_webui.config import get_hostname
+from wlanpi_webui.menud import revoke_menu_session
 from wlanpi_webui.utils import boot_clock, make_api_request, read_boot_id
 
 CORE_PAM_URL = "https://127.0.0.1:31415/api/v1/auth/pam"
@@ -295,6 +297,11 @@ def end_session() -> None:
             sessions.pop(sid, None)
     # After the revocation: a racing /cli/start rechecks it under the CLI lock.
     close_shell(sid)
+    if sid:
+        try:
+            revoke_menu_session(sid)
+        except Exception:
+            pass
     session.clear()
 
 
@@ -626,6 +633,12 @@ def logout():
 @bp.route("/auth/check")
 def auth_check():
     """Session check for nginx ``auth_request`` subrequests."""
-    if session.get("user"):
-        return "", 200
+    user = session.get("user")
+    if user:
+        resp = Response("", status=200)
+        resp.headers["X-WebUI-User"] = user
+        sid = session.get("sid")
+        if sid:
+            resp.headers["X-WebUI-Session"] = sid
+        return resp
     return "", 401
