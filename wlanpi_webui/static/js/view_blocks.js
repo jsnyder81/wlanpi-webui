@@ -96,7 +96,7 @@
     if (!block || !Array.isArray(block.items)) return renderFallback(block);
 
     var html = '<div class="view-block block-kv uk-margin-small-bottom">';
-    html += '<table class="uk-table uk-table-small uk-table-divider uk-table-striped uk-margin-remove">';
+    html += '<table class="uk-table uk-table-small uk-table-divider uk-table-hover uk-margin-remove">';
     html += "<tbody>";
 
     for (var i = 0; i < block.items.length; i++) {
@@ -134,7 +134,7 @@
     }
 
     var html = '<div class="view-block block-table uk-overflow-auto uk-margin-small-bottom">';
-    html += '<table class="uk-table uk-table-small uk-table-divider uk-table-striped uk-table-hover uk-margin-remove">';
+    html += '<table class="uk-table uk-table-small uk-table-divider uk-table-hover uk-margin-remove">';
     html += "<thead><tr>";
 
     for (var c = 0; c < block.columns.length; c++) {

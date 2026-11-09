@@ -89,7 +89,7 @@ describe("ViewBlocks Renderer against Recorded Frame Fixtures", () => {
     const html = ViewBlocks.renderBlock(listBlock);
     assert.match(html, /block-list/);
     assert.match(html, /Interfaces/);
-    assert.match(html, /WLAN Interfaces/);
+    assert.match(html, /Adapters/);
     assert.match(html, /Eth0 IP Config/);
     assert.match(html, /data-index="1"/);
     // Index 1 was selected in fixture

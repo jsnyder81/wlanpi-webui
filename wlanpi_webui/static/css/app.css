@@ -512,8 +512,15 @@ h6 {
     letter-spacing: 0.06em;
 }
 
-.uk-table tbody tr:hover {
+.uk-table tbody tr:hover,
+.uk-table-hover tbody tr:hover,
+.uk-table-hover > tr:hover {
     background: var(--surface-2);
+}
+
+.uk-table-striped > tr:nth-of-type(odd),
+.uk-table-striped tbody tr:nth-of-type(odd) {
+    background: transparent;
 }
 
 /* Numbers line up down a column; timestamps, MACs and file names opt in

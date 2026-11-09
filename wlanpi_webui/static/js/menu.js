@@ -26,6 +26,8 @@
   var consecutiveAbnormalCloses = 0;
   var reconnectDelay = 2000;
   var MAX_RECONNECT_DELAY = 60000;
+  var sideMirrorWs = null;
+  var latestDeviceSummary = null;
 
   function nextId(prefix) {
     msgSeq++;
@@ -223,6 +225,9 @@
       case "prompt":
         onPrompt(frame);
         break;
+      case "event":
+        onEvent(frame);
+        break;
       case "error":
         onError(frame);
         break;
@@ -247,6 +252,169 @@
     console.log("[menu] welcome frame:", frame);
     setStatus("Active (" + frame.mode + ")", "uk-badge-success");
     updateModeBadge(frame);
+    if (frame.mode === "rich" || currentMode === "rich") {
+      sendFrame({
+        v: 1,
+        type: "subscribe",
+        id: nextId("sub"),
+        topics: ["device.summary", "alerts"],
+      });
+    }
+  }
+
+  function onEvent(frame) {
+    if (frame.topic === "device.summary" && frame.data) {
+      latestDeviceSummary = frame.data;
+      renderDeviceSummaryStrip();
+    }
+  }
+
+  function renderDeviceSummaryStrip() {
+    var container = document.getElementById("rich-device-summary");
+    if (!container) return;
+
+    if (!latestDeviceSummary) {
+      container.innerHTML = "";
+      return;
+    }
+
+    if (latestDeviceSummary.core === "unavailable") {
+      container.innerHTML = window.ViewBlocks.renderStatus({
+        type: "status",
+        level: "warn",
+        message: "Core unavailable",
+      });
+      return;
+    }
+
+    var items = [];
+    if (latestDeviceSummary.hostname) {
+      items.push({ key: "Hostname", value: latestDeviceSummary.hostname });
+    }
+    if (latestDeviceSummary.mode) {
+      items.push({ key: "Mode", value: latestDeviceSummary.mode });
+    }
+    if (latestDeviceSummary.eth0) {
+      items.push({ key: "Eth0 IP", value: latestDeviceSummary.eth0 });
+    }
+    if (latestDeviceSummary.wlan0) {
+      items.push({ key: "WLAN0 IP", value: latestDeviceSummary.wlan0 });
+    }
+    if (latestDeviceSummary.ip && !latestDeviceSummary.eth0 && !latestDeviceSummary.wlan0) {
+      items.push({ key: "IP", value: latestDeviceSummary.ip });
+    }
+    if (latestDeviceSummary.public_ip) {
+      items.push({ key: "Public IP", value: latestDeviceSummary.public_ip });
+    }
+    if (latestDeviceSummary.cpu_temp) {
+      items.push({ key: "CPU Temp", value: latestDeviceSummary.cpu_temp });
+    }
+
+    if (items.length === 0) {
+      container.innerHTML = "";
+      return;
+    }
+
+    container.innerHTML =
+      '<div class="uk-card uk-card-muted uk-card-body uk-card-small uk-border-rounded uk-margin-small-bottom" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08);">' +
+      '<div class="uk-text-bold uk-text-small uk-margin-xsmall-bottom uk-text-muted">Device Status</div>' +
+      window.ViewBlocks.renderKv({ type: "kv", items: items }) +
+      "</div>";
+  }
+
+  function addClass(el, cls) {
+    if (!el || !cls) return;
+    if (el.classList && typeof el.classList.add === "function") {
+      el.classList.add(cls);
+    } else {
+      var cur = el.className || "";
+      if (cur.indexOf(cls) === -1) {
+        el.className = (cur + " " + cls).trim();
+      }
+    }
+  }
+
+  function removeClass(el, cls) {
+    if (!el || !cls) return;
+    if (el.classList && typeof el.classList.remove === "function") {
+      el.classList.remove(cls);
+    } else if (el.className) {
+      el.className = el.className.replace(new RegExp("\\b" + cls + "\\b", "g"), "").trim();
+    }
+  }
+
+  function pruneToLatestResult(newCardEl, title) {
+    var container = document.getElementById("rich-job-results");
+    if (!container) return;
+
+    var placeholder = container.querySelector ? container.querySelector(".uk-text-muted.uk-padding-small") : null;
+    if (placeholder && placeholder.parentElement === container && typeof container.removeChild === "function") {
+      container.removeChild(placeholder);
+    }
+
+    var existingActive = null;
+    if (container.children) {
+      for (var j = 0; j < container.children.length; j++) {
+        var c = container.children[j];
+        if (c.className && c.className.indexOf("active-result") !== -1) {
+          existingActive = c;
+          break;
+        }
+      }
+    }
+
+    if (existingActive && existingActive !== newCardEl) {
+      var prevDetails = document.getElementById("rich-previous-result");
+      if (!prevDetails) {
+        prevDetails = document.createElement("details");
+        prevDetails.id = "rich-previous-result";
+        prevDetails.className = "uk-margin-small-top";
+        container.appendChild(prevDetails);
+      }
+      var prevTitle = (existingActive.getAttribute && existingActive.getAttribute("data-result-title")) || "Previous Action";
+      prevDetails.innerHTML =
+        '<summary class="uk-text-muted uk-text-small uk-margin-xsmall-bottom" style="cursor: pointer;">' +
+        '<span>Previous result: <strong>' + window.ViewBlocks.escapeHtml(prevTitle) + "</strong></span>" +
+        "</summary>" +
+        '<div class="uk-margin-small-top rich-prev-body"></div>';
+
+      removeClass(existingActive, "active-result");
+      addClass(existingActive, "uk-card-muted");
+      var prevBody = prevDetails.querySelector ? prevDetails.querySelector(".rich-prev-body") : null;
+      if (prevBody) {
+        prevBody.innerHTML = "";
+        prevBody.appendChild(existingActive);
+      }
+    }
+
+    var prev = document.getElementById("rich-previous-result");
+    if (container.children) {
+      for (var i = container.children.length - 1; i >= 0; i--) {
+        var child = container.children[i];
+        if (child !== newCardEl && child !== prev) {
+          if (typeof container.removeChild === "function") {
+            container.removeChild(child);
+          }
+        }
+      }
+    }
+
+    addClass(newCardEl, "active-result");
+    var resTitle = title || "Result";
+    if (newCardEl.dataset) {
+      newCardEl.dataset.resultTitle = resTitle;
+    }
+    if (newCardEl.setAttribute) {
+      newCardEl.setAttribute("data-result-title", resTitle);
+    }
+
+    if (prev && prev.parentElement === container && typeof container.insertBefore === "function") {
+      container.insertBefore(newCardEl, prev);
+    } else if (typeof container.appendChild === "function") {
+      if (!container.children || container.children.indexOf(newCardEl) === -1) {
+        container.appendChild(newCardEl);
+      }
+    }
   }
 
   function onMenu(frame) {
@@ -274,22 +442,19 @@
     var container = document.getElementById("rich-job-results");
     if (!container) return;
 
-    var placeholder = container.querySelector(".uk-text-muted.uk-padding-small");
-    if (placeholder && placeholder.parentElement === container) {
-      container.removeChild(placeholder);
-    }
-
     var elId = "view-card-" + (frame.node || "nav");
     var card = document.getElementById(elId);
     if (!card) {
       card = document.createElement("div");
       card.id = elId;
       card.className = "uk-card uk-card-default uk-card-body uk-card-small uk-border-rounded uk-margin-small-bottom job-card";
-      container.insertBefore(card, container.firstChild);
     }
 
+    var title = frame.title || frame.node || "View";
+    pruneToLatestResult(card, title);
+
     var html = '<div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">';
-    html += '<div><span class="uk-text-bold">' + window.ViewBlocks.escapeHtml(frame.title || frame.node || "View") + "</span></div>";
+    html += '<div><span class="uk-text-bold">' + window.ViewBlocks.escapeHtml(title) + "</span></div>";
     html += '<div><span class="uk-badge uk-badge-primary">VIEW</span></div>';
     html += "</div>";
 
@@ -358,6 +523,7 @@
   }
 
   function renderRichMenuTree() {
+    renderDeviceSummaryStrip();
     var container = document.getElementById("rich-menu-items");
     var breadcrumbEl = document.getElementById("rich-menu-breadcrumbs");
     if (!container) return;
@@ -535,19 +701,16 @@
     var container = document.getElementById("rich-job-results");
     if (!container) return;
 
-    var placeholder = container.querySelector(".uk-text-muted.uk-padding-small");
-    if (placeholder && placeholder.parentElement === container) {
-      container.removeChild(placeholder);
-    }
-
     var elId = "job-card-" + job.job_id;
     var card = document.getElementById(elId);
     if (!card) {
       card = document.createElement("div");
       card.id = elId;
       card.className = "uk-card uk-card-default uk-card-body uk-card-small uk-border-rounded uk-margin-small-bottom job-card";
-      container.insertBefore(card, container.firstChild);
     }
+
+    var title = job.title || job.node || "Job";
+    pruneToLatestResult(card, title);
 
     var html = '<div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">';
     html += '<div><span class="uk-text-bold">' + window.ViewBlocks.escapeHtml(job.title || job.node || "Job") + '</span> <span class="uk-text-muted uk-text-small">(' + window.ViewBlocks.escapeHtml(job.job_id) + ")</span></div>";
@@ -738,6 +901,157 @@
   }
 
   // ---------------------------------------------------------------------------
+  // Side Panel Mirror (Independent Thin Attach to Default Session)
+  // ---------------------------------------------------------------------------
+
+  function setSideMirrorStatus(text, badgeClass) {
+    var el = document.getElementById("side-mirror-status");
+    if (!el) return;
+    el.textContent = text;
+    el.className = "uk-badge " + (badgeClass || "uk-badge-secondary");
+  }
+
+  function openSideMirror() {
+    var cont = document.getElementById("side-mirror-container");
+    if (cont) cont.style.display = "block";
+    var toggle = document.getElementById("toggle-side-mirror");
+    if (toggle) toggle.checked = true;
+
+    if (sideMirrorWs && (sideMirrorWs.readyState === WebSocket.OPEN || sideMirrorWs.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    setSideMirrorStatus("Connecting...", "uk-badge-warning");
+    try {
+      sideMirrorWs = new WebSocket(getWsUrl());
+    } catch (e) {
+      setSideMirrorStatus("Error", "uk-badge-danger");
+      return;
+    }
+
+    var curSocket = sideMirrorWs;
+    sideMirrorWs.onopen = function () {
+      if (this !== sideMirrorWs || sideMirrorWs !== curSocket) return;
+      setSideMirrorStatus("Connected", "uk-badge-success");
+      var helloFrame = {
+        v: 1,
+        type: "hello",
+        id: nextId("smh"),
+        mode: "thin",
+        session: "default",
+        protocol: [1],
+        client: {
+          name: "wlanpi-webui-side-mirror",
+        },
+        capabilities: {
+          blocks: ["text", "kv", "table", "list", "qr", "status", "progress", "confirm"],
+          screen: { rows: 8, cols: 24 },
+        },
+      };
+      sideMirrorWs.send(JSON.stringify(helloFrame));
+    };
+
+    sideMirrorWs.onmessage = function (evt) {
+      if (this !== sideMirrorWs || sideMirrorWs !== curSocket) return;
+      try {
+        var frame = JSON.parse(evt.data);
+        handleSideMirrorFrame(frame);
+      } catch (err) {
+        console.error("[side-mirror] parse error:", err);
+      }
+    };
+
+    sideMirrorWs.onclose = function (evt) {
+      if (this !== sideMirrorWs || sideMirrorWs !== curSocket) return;
+      setSideMirrorStatus("Disconnected", "uk-badge-danger");
+      sideMirrorWs = null;
+    };
+
+    sideMirrorWs.onerror = function () {
+      if (this !== sideMirrorWs || sideMirrorWs !== curSocket) return;
+      setSideMirrorStatus("Connection error", "uk-badge-danger");
+    };
+  }
+
+  function closeSideMirror() {
+    var cont = document.getElementById("side-mirror-container");
+    if (cont) cont.style.display = "none";
+    var toggle = document.getElementById("toggle-side-mirror");
+    if (toggle) toggle.checked = false;
+
+    if (sideMirrorWs) {
+      try {
+        sideMirrorWs.close(1000, "user closed side mirror");
+      } catch (e) {}
+      sideMirrorWs = null;
+    }
+    setSideMirrorStatus("Closed", "uk-badge-secondary");
+  }
+
+  function sendSideMirrorInput(key) {
+    if (!key || !sideMirrorWs || sideMirrorWs.readyState !== WebSocket.OPEN) return;
+    var frame = {
+      v: 1,
+      type: "input",
+      id: nextId("sminp"),
+      key: key,
+      action: "press",
+    };
+    sideMirrorWs.send(JSON.stringify(frame));
+  }
+
+  function handleSideMirrorFrame(frame) {
+    if (!frame || frame.v !== 1) return;
+    if (frame.type === "welcome") {
+      setSideMirrorStatus("Active (thin:default)", "uk-badge-success");
+    } else if (frame.type === "view") {
+      renderSideMirrorView(frame);
+    }
+  }
+
+  function renderSideMirrorView(frame) {
+    var screenEl = document.getElementById("side-mirror-screen-blocks");
+    var titleEl = document.getElementById("side-mirror-title");
+    var breadcrumbEl = document.getElementById("side-mirror-breadcrumb");
+    var drivenEl = document.getElementById("side-mirror-driven-by");
+    var hintsEl = document.getElementById("side-mirror-hints");
+
+    if (titleEl) titleEl.textContent = frame.title || frame.screen || "WLAN Pi";
+    if (breadcrumbEl) {
+      var bc = Array.isArray(frame.breadcrumb) ? frame.breadcrumb.join(" > ") : "";
+      breadcrumbEl.textContent = bc;
+    }
+    if (drivenEl) {
+      if (frame.driven_by && frame.driven_by.principal) {
+        var drv = frame.driven_by;
+        var drvName = drv.principal.name || drv.principal.kind;
+        var surf = drv.surface ? " (" + drv.surface + ")" : "";
+        var selfTag = drv.self ? " [you]" : "";
+        drivenEl.textContent = "Driven by: " + drvName + surf + selfTag;
+        drivenEl.style.display = "block";
+      } else {
+        drivenEl.style.display = "none";
+      }
+    }
+
+    if (screenEl) {
+      var blocks = Array.isArray(frame.blocks) ? frame.blocks : [];
+      screenEl.innerHTML = window.ViewBlocks.renderBlocks(blocks);
+      window.ViewBlocks.mountQrCodes(screenEl);
+    }
+
+    if (hintsEl && frame.hints) {
+      var hintParts = [];
+      for (var k in frame.hints) {
+        if (frame.hints.hasOwnProperty(k)) {
+          hintParts.push("<strong>" + window.ViewBlocks.escapeHtml(k.toUpperCase()) + ":</strong> " + window.ViewBlocks.escapeHtml(frame.hints[k]));
+        }
+      }
+      hintsEl.innerHTML = hintParts.join(" &nbsp;|&nbsp; ");
+    }
+  }
+
+  // ---------------------------------------------------------------------------
   // Toast notifications & Helpers
   // ---------------------------------------------------------------------------
 
@@ -816,6 +1130,25 @@
       };
     }
 
+    // Side mirror toggle checkbox & close button
+    var sideMirrorToggle = document.getElementById("toggle-side-mirror");
+    if (sideMirrorToggle) {
+      sideMirrorToggle.onchange = function () {
+        if (sideMirrorToggle.checked) {
+          openSideMirror();
+        } else {
+          closeSideMirror();
+        }
+      };
+    }
+
+    var closeSideMirrorBtn = document.getElementById("close-side-mirror");
+    if (closeSideMirrorBtn) {
+      closeSideMirrorBtn.onclick = function () {
+        closeSideMirror();
+      };
+    }
+
     // Legacy toggle mirror mode switch (for test harnesses or backward compat)
     var mirrorToggle = document.getElementById("toggle-mirror-mode");
     if (mirrorToggle) {
@@ -838,6 +1171,13 @@
       if (dpadBtn) {
         var key = dpadBtn.getAttribute("data-dpad-key");
         sendInput(key);
+        return;
+      }
+
+      var sideDpadBtn = evt.target.closest("[data-side-dpad-key]");
+      if (sideDpadBtn) {
+        var sideKey = sideDpadBtn.getAttribute("data-side-dpad-key");
+        sendSideMirrorInput(sideKey);
         return;
       }
 
@@ -1033,9 +1373,17 @@
     applyMode: applyMode,
     connect: connect,
     disconnect: disconnect,
+    openSideMirror: openSideMirror,
+    closeSideMirror: closeSideMirror,
+    renderDeviceSummaryStrip: renderDeviceSummaryStrip,
+    handleFrame: handleFrame,
+    handleSideMirrorFrame: handleSideMirrorFrame,
     init: init,
     getWs: function () {
       return ws;
+    },
+    getSideMirrorWs: function () {
+      return sideMirrorWs;
     },
   };
   if (typeof window !== "undefined") {
