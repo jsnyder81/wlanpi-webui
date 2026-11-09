@@ -6,7 +6,7 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-SCHEMA_PATH="$REPO_DIR/../wlanpi-menud/protocol/frames.schema.json"
+SCHEMA_PATH="${SCHEMA_PATH:-$REPO_DIR/../wlanpi-menud/protocol/frames.schema.json}"
 OUTPUT_PATH="$REPO_DIR/wlanpi_webui/static/js/types/frames.d.ts"
 
 if [ ! -f "$SCHEMA_PATH" ]; then
@@ -15,6 +15,6 @@ if [ ! -f "$SCHEMA_PATH" ]; then
 fi
 
 mkdir -p "$(dirname "$OUTPUT_PATH")"
-npx --yes json-schema-to-typescript -i "$SCHEMA_PATH" -o "$OUTPUT_PATH" --unreachableDefinitions
+npx --yes json-schema-to-typescript@16 -i "$SCHEMA_PATH" -o "$OUTPUT_PATH" --unreachableDefinitions
 
 echo "Generated TypeScript types at $OUTPUT_PATH"

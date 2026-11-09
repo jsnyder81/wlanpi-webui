@@ -54,12 +54,37 @@ jobs:
       - name: Run actionlint
         uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
 
+  schema-types:
+    name: schema-types
+    runs-on: 'ubuntu-24.04-arm'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Checkout menud for schema
+        uses: actions/checkout@v7
+        with:
+          repository: WLAN-Pi/wlanpi-menud
+          path: wlanpi-menud
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+
+      - name: Regenerate TypeScript types and verify
+        run: |
+          SCHEMA_PATH=wlanpi-menud/protocol/frames.schema.json ./scripts/generate-types.sh
+          git diff --exit-code wlanpi_webui/static/js/types/frames.d.ts
+
   slack-workflow-status:
     if: ${{ always() && github.repository_owner == 'WLAN-Pi' && ! github.event.pull_request.head.repo.fork && github.actor != 'dependabot[bot]' }}
     name: Post Workflow Status to Slack
     needs:
       - shellcheck
       - actionlint
+      - schema-types
     runs-on: 'ubuntu-24.04'
     steps:
       - name: Slack Workflow Notification
