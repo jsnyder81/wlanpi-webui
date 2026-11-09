@@ -6,7 +6,7 @@ set -eu
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-SCHEMA_PATH="${SCHEMA_PATH:-$REPO_DIR/../wlanpi-menud/protocol/frames.schema.json}"
+SCHEMA_PATH="${SCHEMA_PATH:-$REPO_DIR/protocol/frames.schema.json}"
 OUTPUT_PATH="$REPO_DIR/wlanpi_webui/static/js/types/frames.d.ts"
 
 if [ ! -f "$SCHEMA_PATH" ]; then

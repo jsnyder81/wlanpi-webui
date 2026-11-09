@@ -62,12 +62,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
 
-      - name: Checkout menud for schema
-        uses: actions/checkout@v7
-        with:
-          repository: WLAN-Pi/wlanpi-menud
-          path: wlanpi-menud
-
       - name: Set up Node.js
         uses: actions/setup-node@v6
         with:
@@ -75,7 +69,7 @@ jobs:
 
       - name: Regenerate TypeScript types and verify
         run: |
-          SCHEMA_PATH=wlanpi-menud/protocol/frames.schema.json ./scripts/generate-types.sh
+          ./scripts/generate-types.sh
           git diff --exit-code wlanpi_webui/static/js/types/frames.d.ts
 
   slack-workflow-status:
