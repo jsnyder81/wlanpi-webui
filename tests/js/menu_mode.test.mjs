@@ -336,4 +336,47 @@ describe("Menu Panel Three-Way Mode and Rich Invocation", () => {
     const results = h.elements["rich-job-results"];
     assert.ok(results.children.length > 0, "View block card should be mounted in results container");
   });
+
+  it("guards against stale ws.onclose from old socket arriving after mode switch", () => {
+    const h = createModeTestHarness();
+    const ws1 = h.latestWs();
+    ws1.open();
+    const hello1 = JSON.parse(ws1.sent[0]);
+    ws1.receiveFrame({ v: 1, type: "welcome", id: hello1.id, mode: "rich", session: "new" });
+    assert.equal(h.elements["menu-connection-status"].textContent, "Active (rich)");
+
+    // Override ws1.close to NOT fire onclose synchronously, simulating real async WebSocket close
+    ws1.close = function (code, reason) {
+      this.readyState = 3; // CLOSED
+      this._pendingClose = { code: code || 1000, reason: reason || "" };
+    };
+
+    // Switch mode to thin-private
+    const select = h.elements["menu-mode-select"];
+    select.value = "thin-private";
+    select.onchange();
+
+    const ws2 = h.latestWs();
+    assert.notEqual(ws1, ws2);
+    ws2.open();
+    const hello2 = JSON.parse(ws2.sent[0]);
+    ws2.receiveFrame({ v: 1, type: "welcome", id: hello2.id, mode: "thin", session: "new" });
+    assert.equal(h.elements["menu-connection-status"].textContent, "Active (thin)");
+
+    const timersBefore = h.timers.size;
+
+    // Simulate stale close event arriving from ws1 after the switch
+    assert.ok(ws1._pendingClose);
+    ws1.onclose(ws1._pendingClose);
+
+    // Status MUST NOT be overwritten to "Disconnected" or "Unavailable"
+    assert.equal(h.elements["menu-connection-status"].textContent, "Active (thin)");
+    // No reconnect timer should have been scheduled on ws2
+    assert.equal(h.timers.size, timersBefore);
+
+    // Also test abnormal close (1006) from old socket
+    ws1.onclose({ code: 1006, reason: "abnormal" });
+    assert.equal(h.elements["menu-connection-status"].textContent, "Active (thin)");
+    assert.equal(h.timers.size, timersBefore);
+  });
 });

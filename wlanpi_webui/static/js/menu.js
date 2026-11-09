@@ -80,12 +80,16 @@
       return;
     }
 
+    var currentSocket = ws;
+
     ws.onopen = function () {
+      if (this !== ws || ws !== currentSocket) return;
       setStatus("Connected (" + currentMode + ")", "uk-badge-success");
       sendHello();
     };
 
     ws.onmessage = function (evt) {
+      if (this !== ws || ws !== currentSocket) return;
       try {
         var frame = JSON.parse(evt.data);
         consecutiveAbnormalCloses = 0;
@@ -97,6 +101,7 @@
     };
 
     ws.onclose = function (evt) {
+      if (this !== ws || ws !== currentSocket) return;
       console.log("[menu] ws closed, code:", evt.code, "reason:", evt.reason);
       if (evt.code === 4401) {
         setStatus("Session Revoked", "uk-badge-danger");
@@ -130,6 +135,7 @@
     };
 
     ws.onerror = function () {
+      if (this !== ws || ws !== currentSocket) return;
       setStatus("Connection error", "uk-badge-danger");
     };
   }
@@ -1018,4 +1024,24 @@
 
   window.addEventListener("DOMContentLoaded", init);
   window.addEventListener("load", init);
+
+  // Export handlers for test harness and automation
+  var menuApi = {
+    handleNodeClick: handleNodeClick,
+    selectActionNode: selectActionNode,
+    invokeNode: invokeNode,
+    applyMode: applyMode,
+    connect: connect,
+    disconnect: disconnect,
+    init: init,
+    getWs: function () {
+      return ws;
+    },
+  };
+  if (typeof window !== "undefined") {
+    window.wlanpiMenu = menuApi;
+  }
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = menuApi;
+  }
 })();
