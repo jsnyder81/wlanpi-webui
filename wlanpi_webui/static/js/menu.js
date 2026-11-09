@@ -411,7 +411,7 @@
     if (prev && prev.parentElement === container && typeof container.insertBefore === "function") {
       container.insertBefore(newCardEl, prev);
     } else if (typeof container.appendChild === "function") {
-      if (!container.children || container.children.indexOf(newCardEl) === -1) {
+      if (newCardEl.parentNode !== container && newCardEl.parentElement !== container) {
         container.appendChild(newCardEl);
       }
     }
@@ -444,6 +444,14 @@
 
     var elId = "view-card-" + (frame.node || "nav");
     var card = document.getElementById(elId);
+    if (card && card.parentElement !== container && card.parentNode !== container) {
+      if (typeof card.removeAttribute === "function") {
+        card.removeAttribute("id");
+      } else {
+        card.id = "";
+      }
+      card = null;
+    }
     if (!card) {
       card = document.createElement("div");
       card.id = elId;
@@ -703,6 +711,14 @@
 
     var elId = "job-card-" + job.job_id;
     var card = document.getElementById(elId);
+    if (card && card.parentElement !== container && card.parentNode !== container) {
+      if (typeof card.removeAttribute === "function") {
+        card.removeAttribute("id");
+      } else {
+        card.id = "";
+      }
+      card = null;
+    }
     if (!card) {
       card = document.createElement("div");
       card.id = elId;

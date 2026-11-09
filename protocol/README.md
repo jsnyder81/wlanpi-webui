@@ -3,8 +3,8 @@
 This directory contains the vendored WebSocket protocol contract from `wlanpi-menud`.
 
 - **Vendored Schema**: `protocol/frames.schema.json`
-- **Source**: `wlanpi-menud` at commit `298b81f8ded39da62cf0b748e7209061950a4f3e`
-- **Synced At**: 2026-11-09 04:44:36Z
+- **Source**: `wlanpi-menud` at commit `524181b86f9e05553eaa7ef1929688d3a958b829`
+- **Synced At**: 2026-11-09 17:33:26Z
 - **Generated Types**: `wlanpi_webui/static/js/types/frames.d.ts`
 
 ## Synchronization
