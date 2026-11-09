@@ -24,6 +24,8 @@
   var reconnectTimer = null;
   var isManualClose = false;
   var consecutiveAbnormalCloses = 0;
+  var reconnectDelay = 2000;
+  var MAX_RECONNECT_DELAY = 60000;
 
   function nextId(prefix) {
     msgSeq++;
@@ -43,15 +45,18 @@
     el.className = "uk-badge " + (badgeClass || "uk-badge-secondary");
   }
 
-  function showMenuUnavailable(msg) {
+  function showMenuUnavailable(msg, showRetry) {
     var text = msg || "Menu unavailable.";
+    var retryHtml = showRetry
+      ? '<div class="uk-margin-small-top"><button type="button" class="uk-button uk-button-default uk-button-small menu-retry-btn"><span uk-icon="icon: refresh"></span> Retry</button></div>'
+      : "";
     var richItems = document.getElementById("rich-menu-items");
     if (richItems) {
-      richItems.innerHTML = '<div class="uk-alert uk-alert-warning uk-margin-top uk-text-center"><p>' + text + '</p></div>';
+      richItems.innerHTML = '<div class="uk-alert uk-alert-warning uk-margin-top uk-text-center"><p>' + text + '</p>' + retryHtml + '</div>';
     }
     var mirrorBlocks = document.getElementById("mirror-screen-blocks");
     if (mirrorBlocks) {
-      mirrorBlocks.innerHTML = '<div class="uk-text-center uk-text-muted uk-margin-medium-top">' + text + '</div>';
+      mirrorBlocks.innerHTML = '<div class="uk-text-center uk-text-muted uk-margin-medium-top"><p>' + text + '</p>' + retryHtml + '</div>';
     }
   }
 
@@ -84,6 +89,7 @@
       try {
         var frame = JSON.parse(evt.data);
         consecutiveAbnormalCloses = 0;
+        reconnectDelay = 2000;
         handleFrame(frame);
       } catch (err) {
         console.error("[menu] failed to parse frame:", err, evt.data);
@@ -100,22 +106,24 @@
       if (evt.code === 1008) {
         setStatus("Forbidden", "uk-badge-danger");
         showToast("Menu connection forbidden (origin mismatch or policy violation).", "danger");
-        showMenuUnavailable("Menu unavailable (policy violation / origin mismatch).");
+        showMenuUnavailable("Menu unavailable (policy violation / origin mismatch).", false);
         return;
       }
       if (evt.code === 1006) {
         consecutiveAbnormalCloses++;
         if (consecutiveAbnormalCloses >= 2) {
-          console.warn("[menu] stopping reconnect loop after consecutive abnormal closes (code 1006)");
+          console.warn("[menu] consecutive abnormal closes (code 1006), backing off with retry option");
           setStatus("Unavailable", "uk-badge-danger");
           showToast("Menu unavailable.", "danger");
-          showMenuUnavailable("Menu unavailable.");
-          return;
+          showMenuUnavailable("Menu unavailable.", true);
         }
       } else {
         consecutiveAbnormalCloses = 0;
+        reconnectDelay = 2000;
       }
-      setStatus("Disconnected", "uk-badge-danger");
+      if (consecutiveAbnormalCloses < 2) {
+        setStatus("Disconnected", "uk-badge-danger");
+      }
       if (!isManualClose) {
         scheduleReconnect();
       }
@@ -129,6 +137,7 @@
   function disconnect() {
     isManualClose = true;
     consecutiveAbnormalCloses = 0;
+    reconnectDelay = 2000;
     clearTimeout(reconnectTimer);
     if (ws) {
       try {
@@ -140,12 +149,21 @@
 
   function scheduleReconnect() {
     clearTimeout(reconnectTimer);
+    var delay = reconnectDelay;
     reconnectTimer = setTimeout(function () {
       var panel = document.getElementById("menu-panel");
       if (panel) {
         connect();
       }
-    }, 3000);
+    }, delay);
+    reconnectDelay = Math.min(reconnectDelay * 2, MAX_RECONNECT_DELAY);
+  }
+
+  function retryConnect() {
+    clearTimeout(reconnectTimer);
+    reconnectDelay = 2000;
+    consecutiveAbnormalCloses = 0;
+    connect();
   }
 
   function sendFrame(frame) {
@@ -709,6 +727,14 @@
 
     // D-Pad buttons
     panel.addEventListener("click", function (evt) {
+      // Retry connection button
+      var retryBtn = evt.target.closest(".menu-retry-btn");
+      if (retryBtn) {
+        evt.preventDefault();
+        retryConnect();
+        return;
+      }
+
       var dpadBtn = evt.target.closest("[data-dpad-key]");
       if (dpadBtn) {
         var key = dpadBtn.getAttribute("data-dpad-key");

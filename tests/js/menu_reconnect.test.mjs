@@ -20,14 +20,31 @@ function createTestHarness() {
       this.innerHTML = "";
       this.textContent = "";
       this.className = "";
+      this.listeners = {};
     }
-    addEventListener() {}
-    removeEventListener() {}
+    addEventListener(evt, fn) {
+      this.listeners[evt] = this.listeners[evt] || [];
+      this.listeners[evt].push(fn);
+    }
+    removeEventListener(evt, fn) {
+      if (this.listeners[evt]) {
+        this.listeners[evt] = this.listeners[evt].filter((f) => f !== fn);
+      }
+    }
     querySelector() {
       return null;
     }
     querySelectorAll() {
       return [];
+    }
+    dispatchEvent(event) {
+      const fns = this.listeners[event.type] || [];
+      for (const fn of fns) fn(event);
+    }
+    closest(sel) {
+      if (sel === ".menu-retry-btn" && this.className.includes("menu-retry-btn")) return this;
+      if (sel === "#menu-retry-btn" && this.id === "menu-retry-btn") return this;
+      return null;
     }
   }
 
@@ -127,12 +144,31 @@ function createTestHarness() {
     return true;
   }
 
+  function clickRetry() {
+    const btn = new MockElement("retry-btn");
+    btn.className = "menu-retry-btn";
+    const panel = elements["menu-panel"];
+    panel.dispatchEvent({
+      type: "click",
+      target: btn,
+      preventDefault: () => {},
+    });
+  }
+
+  function getScheduledDelay() {
+    const entries = Array.from(timers.entries());
+    if (entries.length === 0) return null;
+    return entries[0][1].ms;
+  }
+
   return {
     elements,
     instances,
     timers,
     toasts,
     fireTimer,
+    clickRetry,
+    getScheduledDelay,
   };
 }
 
@@ -156,35 +192,107 @@ describe("Menu WebSocket Reconnect and Stop Logic", () => {
       h.elements["mirror-screen-blocks"].innerHTML,
       /Menu unavailable \(policy violation \/ origin mismatch\)\./
     );
+    // 1008 must not include retry control
+    assert.doesNotMatch(h.elements["rich-menu-items"].innerHTML, /menu-retry-btn/);
     // Reconnect timer must NOT be scheduled
     assert.equal(h.timers.size, 0, "no reconnect timer scheduled on 1008");
   });
 
-  it("stops reconnect retries on two consecutive 1006 abnormal closes and displays fallback", () => {
+  it("backs off exponentially on consecutive 1006 abnormal closes, displays fallback with retry, and caps at 60s", () => {
     const h = createTestHarness();
     assert.equal(h.instances.length, 1);
     const ws1 = h.instances[0];
     ws1.open();
 
-    // First abnormal close (1006)
+    // 1st abnormal close (1006) -> initial backoff 2000ms
     ws1.close(1006, "abnormal 1");
     assert.equal(h.elements["menu-connection-status"].textContent, "Disconnected");
-    assert.equal(h.timers.size, 1, "reconnect timer scheduled after first abnormal close");
+    assert.equal(h.timers.size, 1);
+    assert.equal(h.getScheduledDelay(), 2000, "1st reconnect delay is 2s");
 
-    // Execute scheduled reconnect timer
-    const fired = h.fireTimer();
-    assert.ok(fired);
-    assert.equal(h.instances.length, 2, "second WebSocket connection created on reconnect");
+    // Execute 1st scheduled reconnect
+    assert.ok(h.fireTimer());
+    assert.equal(h.instances.length, 2);
 
-    // Second consecutive abnormal close (1006) without receiving any frame
+    // 2nd consecutive abnormal close (1006) -> backoff 4000ms, shows Unavailable + Retry button
     const ws2 = h.instances[1];
     ws2.open();
     ws2.close(1006, "abnormal 2");
 
     assert.equal(h.elements["menu-connection-status"].textContent, "Unavailable");
     assert.match(h.elements["rich-menu-items"].innerHTML, /Menu unavailable\./);
-    assert.match(h.elements["mirror-screen-blocks"].innerHTML, /Menu unavailable\./);
-    assert.equal(h.timers.size, 0, "no reconnect timer scheduled after 2 consecutive 1006 closes");
+    assert.match(h.elements["rich-menu-items"].innerHTML, /menu-retry-btn/);
+    assert.match(h.elements["mirror-screen-blocks"].innerHTML, /menu-retry-btn/);
+    assert.equal(h.timers.size, 1, "reconnect timer is still scheduled (no hard stop)");
+    assert.equal(h.getScheduledDelay(), 4000, "2nd reconnect delay is 4s");
+
+    // 3rd close -> 8000ms
+    assert.ok(h.fireTimer());
+    assert.equal(h.instances.length, 3);
+    const ws3 = h.instances[2];
+    ws3.open();
+    ws3.close(1006, "abnormal 3");
+    assert.equal(h.getScheduledDelay(), 8000, "3rd reconnect delay is 8s");
+
+    // 4th close -> 16000ms
+    assert.ok(h.fireTimer());
+    assert.equal(h.instances.length, 4);
+    const ws4 = h.instances[3];
+    ws4.open();
+    ws4.close(1006, "abnormal 4");
+    assert.equal(h.getScheduledDelay(), 16000, "4th reconnect delay is 16s");
+
+    // 5th close -> 32000ms
+    assert.ok(h.fireTimer());
+    assert.equal(h.instances.length, 5);
+    const ws5 = h.instances[4];
+    ws5.open();
+    ws5.close(1006, "abnormal 5");
+    assert.equal(h.getScheduledDelay(), 32000, "5th reconnect delay is 32s");
+
+    // 6th close -> 60000ms (capped at 60s)
+    assert.ok(h.fireTimer());
+    assert.equal(h.instances.length, 6);
+    const ws6 = h.instances[5];
+    ws6.open();
+    ws6.close(1006, "abnormal 6");
+    assert.equal(h.getScheduledDelay(), 60000, "6th reconnect delay is 60s cap");
+
+    // 7th close -> stays capped at 60000ms
+    assert.ok(h.fireTimer());
+    assert.equal(h.instances.length, 7);
+    const ws7 = h.instances[6];
+    ws7.open();
+    ws7.close(1006, "abnormal 7");
+    assert.equal(h.getScheduledDelay(), 60000, "7th reconnect delay remains capped at 60s");
+  });
+
+  it("immediately reconnects and resets backoff when Retry is clicked", () => {
+    const h = createTestHarness();
+    assert.equal(h.instances.length, 1);
+    const ws1 = h.instances[0];
+    ws1.open();
+    ws1.close(1006, "abnormal 1");
+    h.fireTimer();
+
+    const ws2 = h.instances[1];
+    ws2.open();
+    ws2.close(1006, "abnormal 2");
+    assert.equal(h.elements["menu-connection-status"].textContent, "Unavailable");
+    assert.equal(h.timers.size, 1);
+    assert.equal(h.getScheduledDelay(), 4000);
+
+    // User clicks the Retry button
+    h.clickRetry();
+
+    assert.equal(h.elements["menu-connection-status"].textContent, "Connecting...");
+    assert.equal(h.instances.length, 3, "new connection created immediately without waiting for timer");
+    assert.equal(h.timers.size, 0, "previous backoff timer was cleared");
+
+    // If this new connection also closes abnormally, backoff starts from 2000ms
+    const ws3 = h.instances[2];
+    ws3.close(1006, "abnormal after retry");
+    assert.equal(h.getScheduledDelay(), 2000, "backoff delay was reset to 2s");
   });
 
   it("resets consecutive 1006 counter when a frame is received between abnormal closes", () => {
