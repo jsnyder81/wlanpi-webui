@@ -128,6 +128,12 @@ def create_app(config_class=Config):
     app.register_blueprint(profiler_bp)
     app.logger.debug("profiler blueprint registered")
 
+    app.logger.debug("registering menu blueprint")
+    from wlanpi_webui.menu import bp as menu_bp
+
+    app.register_blueprint(menu_bp)
+    app.logger.debug("menu blueprint registered")
+
     app.logger.debug("registering network blueprint")
     from wlanpi_webui.network import bp as network_bp
 

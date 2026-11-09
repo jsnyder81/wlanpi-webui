@@ -103,6 +103,9 @@
   // The server marks the active nav item on full loads; keep it in sync
   // for htmx in-app navigation too.
   function navSection(path) {
+    if (path.indexOf("/menu") === 0) {
+      return "menu";
+    }
     if (/^\/(apps|profiler|kismet|grafana|cockpit|speedtest)/.test(path)) {
       return "apps";
     }

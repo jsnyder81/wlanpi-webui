@@ -1,0 +1,13 @@
+{
+  "name": "wlanpi-webui",
+  "version": "1.21.19",
+  "description": "WLAN Pi WebUI frontend and panels",
+  "private": true,
+  "scripts": {
+    "generate:types": "npx --yes json-schema-to-typescript -i ../wlanpi-menud/protocol/frames.schema.json -o wlanpi_webui/static/js/types/frames.d.ts --unreachableDefinitions",
+    "test": "node --test tests/js/*.test.mjs"
+  },
+  "devDependencies": {
+    "json-schema-to-typescript": "^16.0.0"
+  }
+}

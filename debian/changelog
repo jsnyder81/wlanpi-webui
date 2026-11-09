@@ -1,3 +1,14 @@
+wlanpi-webui (1.21.19-1) unstable; urgency=medium
+
+  * Retire the Cockpit plugin path: WebUI Menu plugin replaces Cockpit per
+    the FPMS Re-Architecture Plan. Removed etc/cockpit configuration and
+    deprecated wlanpi_webui/cockpit.
+  * Add Menu panel: backend blueprint + frontend view block renderers
+    connecting to wss://<host>/ui/ws (rich mode with session=new by default,
+    plus mirror panel toggle for thin mode attach to the default session).
+
+ -- Jake Snyder <jsnyder81@gmail.com>  Mon, 09 Nov 2026 00:00:00 +0000
+
 wlanpi-webui (1.21.18-1) unstable; urgency=medium
 
   * Serve LibreSpeed on https://<host>:8443 and Grafana on

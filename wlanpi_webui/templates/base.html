@@ -38,7 +38,7 @@
   </div>
   <div id="thebiglebowski" class="uk-flex uk-flex-column">
     <!--HEADER-->
-    {% set _nav = 'cli' if request.path.startswith('/cli') else ('apps' if request.path.startswith(('/apps', '/profiler', '/kismet', '/grafana', '/cockpit', '/speedtest', '/app/librespeed')) else ('network' if request.path.startswith('/network') else ('system' if request.path.startswith('/system') else ('home' if request.path == '/' else '')))) %}
+    {% set _nav = 'menu' if request.path.startswith('/menu') else ('cli' if request.path.startswith('/cli') else ('apps' if request.path.startswith(('/apps', '/profiler', '/kismet', '/grafana', '/cockpit', '/speedtest', '/app/librespeed')) else ('network' if request.path.startswith('/network') else ('system' if request.path.startswith('/system') else ('home' if request.path == '/' else ''))))) %}
     <div class="uk-box-shadow-small uk-flex-first uk-background-muted" style="margin: 0px !important;">
       <nav class="uk-navbar-container" uk-navbar id="navbar" aria-label="Primary">
         <div class="uk-navbar-left">
@@ -49,6 +49,8 @@
           <ul class="uk-navbar-nav uk-visible@m">
             <li{% if _nav == 'home' %} class="uk-active"{% endif %}><a href="/" data-nav="home" hx-get="/" hx-target="#content" hx-swap="innerHTML" hx-push-url="true"
                 hx-indicator=".progress"{% if _nav == 'home' %} aria-current="page"{% endif %}>HOME</a></li>
+            <li{% if _nav == 'menu' %} class="uk-active"{% endif %}><a href="/menu" data-nav="menu" hx-get="/menu" hx-target="#content" hx-swap="innerHTML" hx-push-url="true"
+                hx-indicator=".progress"{% if _nav == 'menu' %} aria-current="page"{% endif %}>MENU</a></li>
             <li{% if _nav == 'apps' %} class="uk-active"{% endif %}><a href="/apps" data-nav="apps" hx-get="/apps" hx-target="#content" hx-swap="innerHTML" hx-push-url="true"
                 hx-indicator=".progress"{% if _nav == 'apps' %} aria-current="page"{% endif %}>APPS</a></li>
             <li{% if _nav == 'cli' %} class="uk-active"{% endif %}><a href="/cli" data-nav="cli" hx-get="/cli" hx-target="#content" hx-swap="innerHTML" hx-push-url="true"
@@ -115,6 +117,8 @@
       <ul class="uk-nav uk-nav-default" uk-nav>
         <li{% if _nav == 'home' %} class="uk-active"{% endif %}><a href="/" data-nav="home" hx-get="/" hx-target="#content" hx-swap="innerHTML" hx-push-url="true"
             hx-indicator=".progress"{% if _nav == 'home' %} aria-current="page"{% endif %}>HOME</a></li>
+        <li{% if _nav == 'menu' %} class="uk-active"{% endif %}><a href="/menu" data-nav="menu" hx-get="/menu" hx-target="#content" hx-swap="innerHTML" hx-push-url="true"
+            hx-indicator=".progress"{% if _nav == 'menu' %} aria-current="page"{% endif %}>MENU</a></li>
         <li{% if _nav == 'apps' %} class="uk-active"{% endif %}><a href="/apps" data-nav="apps" hx-get="/apps" hx-target="#content" hx-swap="innerHTML" hx-push-url="true"
             hx-indicator=".progress"{% if _nav == 'apps' %} aria-current="page"{% endif %}>APPS</a></li>
         <li{% if _nav == 'cli' %} class="uk-active"{% endif %}><a href="/cli" data-nav="cli" hx-get="/cli" hx-target="#content" hx-swap="innerHTML" hx-push-url="true"
@@ -132,6 +136,8 @@
   <!--/OFFCANVAS-->
   <!--JS-->
   <script src="{{ url_for('static', filename='js/qrcode.min.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/view_blocks.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/menu.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/profiler.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/speedtest_results.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/cli.js') }}" defer></script>
