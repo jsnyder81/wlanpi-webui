@@ -23,6 +23,7 @@
   var lastThinView = null;
   var reconnectTimer = null;
   var isManualClose = false;
+  var consecutiveAbnormalCloses = 0;
 
   function nextId(prefix) {
     msgSeq++;
@@ -40,6 +41,18 @@
     if (!el) return;
     el.textContent = text;
     el.className = "uk-badge " + (badgeClass || "uk-badge-secondary");
+  }
+
+  function showMenuUnavailable(msg) {
+    var text = msg || "Menu unavailable.";
+    var richItems = document.getElementById("rich-menu-items");
+    if (richItems) {
+      richItems.innerHTML = '<div class="uk-alert uk-alert-warning uk-margin-top uk-text-center"><p>' + text + '</p></div>';
+    }
+    var mirrorBlocks = document.getElementById("mirror-screen-blocks");
+    if (mirrorBlocks) {
+      mirrorBlocks.innerHTML = '<div class="uk-text-center uk-text-muted uk-margin-medium-top">' + text + '</div>';
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -70,6 +83,7 @@
     ws.onmessage = function (evt) {
       try {
         var frame = JSON.parse(evt.data);
+        consecutiveAbnormalCloses = 0;
         handleFrame(frame);
       } catch (err) {
         console.error("[menu] failed to parse frame:", err, evt.data);
@@ -82,6 +96,24 @@
         setStatus("Session Revoked", "uk-badge-danger");
         showToast("Authentication expired or session revoked. Please sign in again.", "danger");
         return;
+      }
+      if (evt.code === 1008) {
+        setStatus("Forbidden", "uk-badge-danger");
+        showToast("Menu connection forbidden (origin mismatch or policy violation).", "danger");
+        showMenuUnavailable("Menu unavailable (policy violation / origin mismatch).");
+        return;
+      }
+      if (evt.code === 1006) {
+        consecutiveAbnormalCloses++;
+        if (consecutiveAbnormalCloses >= 2) {
+          console.warn("[menu] stopping reconnect loop after consecutive abnormal closes (code 1006)");
+          setStatus("Unavailable", "uk-badge-danger");
+          showToast("Menu unavailable.", "danger");
+          showMenuUnavailable("Menu unavailable.");
+          return;
+        }
+      } else {
+        consecutiveAbnormalCloses = 0;
       }
       setStatus("Disconnected", "uk-badge-danger");
       if (!isManualClose) {
@@ -96,6 +128,7 @@
 
   function disconnect() {
     isManualClose = true;
+    consecutiveAbnormalCloses = 0;
     clearTimeout(reconnectTimer);
     if (ws) {
       try {

@@ -67,14 +67,14 @@ fi
 # wlanpi-menud proxy snippet: enabled only when wlanpi-menud is installed
 WLANPI_MENUD_CONF=/etc/wlanpi-webui/nginx/conf.d/wlanpi-menud.conf
 mkdir -p /etc/wlanpi-webui/nginx/conf.d
-if dpkg-query -W -f='${Status}' wlanpi-menud 2>/dev/null | grep -q "ok installed" || [ -f /etc/wlanpi-menud/config.toml ]; then
+if dpkg-query -W -f='${Status}' wlanpi-menud 2>/dev/null | grep -q "ok installed" || [ -f /lib/systemd/system/wlanpi-menud.service ] || [ -f /usr/lib/systemd/system/wlanpi-menud.service ]; then
     if [ -f /etc/wlanpi-webui/nginx/conf-available/wlanpi-menud.conf ] && [ ! -L "$WLANPI_MENUD_CONF" ]; then
         echo "Linking wlanpi-menud.conf snippet ..."
         ln -sf /etc/wlanpi-webui/nginx/conf-available/wlanpi-menud.conf "$WLANPI_MENUD_CONF"
         CONF_CHANGED=0
     fi
 else
-    if [ -L "$WLANPI_MENUD_CONF" ]; then
+    if [ -L "$WLANPI_MENUD_CONF" ] || [ -f "$WLANPI_MENUD_CONF" ]; then
         echo "Unlinking wlanpi-menud.conf (wlanpi-menud not installed) ..."
         rm -f "$WLANPI_MENUD_CONF"
         CONF_CHANGED=0

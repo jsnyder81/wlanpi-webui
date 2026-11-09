@@ -44,10 +44,15 @@ fi
 
 WLANPI_MENUD=/etc/wlanpi-webui/nginx/conf.d/wlanpi-menud.conf
 mkdir -p /etc/wlanpi-webui/nginx/conf.d
-if [ -f /etc/wlanpi-webui/nginx/conf-available/wlanpi-menud.conf ] && { dpkg-query -W -f='${Status}' wlanpi-menud 2>/dev/null | grep -q "ok installed" || [ -f /etc/wlanpi-menud/config.toml ]; }; then
+if [ -f /etc/wlanpi-webui/nginx/conf-available/wlanpi-menud.conf ] && { dpkg-query -W -f='${Status}' wlanpi-menud 2>/dev/null | grep -q "ok installed" || [ -f /lib/systemd/system/wlanpi-menud.service ] || [ -f /usr/lib/systemd/system/wlanpi-menud.service ]; }; then
     if ! isValidSymlink $WLANPI_MENUD; then
         echo "Linking wlanpi-menud.conf snippet..."
         ln -s /etc/wlanpi-webui/nginx/conf-available/wlanpi-menud.conf $WLANPI_MENUD
+    fi
+else
+    if [ -L "$WLANPI_MENUD" ] || [ -f "$WLANPI_MENUD" ]; then
+        echo "Unlinking wlanpi-menud.conf (wlanpi-menud not installed)..."
+        rm -f "$WLANPI_MENUD"
     fi
 fi
 

@@ -1,6 +1,7 @@
 """Tests for wlanpi_webui.menud helper."""
 
 import json
+import logging
 import socket
 import threading
 
@@ -33,13 +34,27 @@ def _read_ws_frame(conn):
     return json.loads(payload.decode("utf-8"))
 
 
+def _make_server_frame(payload: bytes) -> bytes:
+    """Encode an unmasked server WebSocket text frame."""
+    length = len(payload)
+    if length < 126:
+        header = bytes([0x81, length])
+    elif length < 65536:
+        header = bytes([0x81, 126]) + length.to_bytes(2, "big")
+    else:
+        header = bytes([0x81, 127]) + length.to_bytes(8, "big")
+    return header + payload
+
+
 def test_revoke_empty_sid():
     assert revoke_menu_session("") is False
 
 
-def test_revoke_menud_down(tmp_path):
+def test_revoke_menud_down(tmp_path, caplog):
     sock_path = str(tmp_path / "missing.sock")
-    assert revoke_menu_session("test-sid", sock_path=sock_path) is False
+    with caplog.at_level(logging.WARNING):
+        assert revoke_menu_session("test-sid", sock_path=sock_path) is False
+    assert any("failed" in rec.message for rec in caplog.records)
 
 
 def test_revoke_successful(tmp_path):
@@ -82,7 +97,7 @@ def test_revoke_successful(tmp_path):
     assert received_frames[1]["webui_session"] == "sess_abc123"
 
 
-def test_revoke_handshake_rejection(tmp_path):
+def test_revoke_handshake_rejection(tmp_path, caplog):
     sock_path = str(tmp_path / "menud.sock")
     srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
     srv.bind(sock_path)
@@ -97,8 +112,78 @@ def test_revoke_handshake_rejection(tmp_path):
     t = threading.Thread(target=handle_server)
     t.start()
 
-    res = revoke_menu_session("sess_abc123", sock_path=sock_path, timeout=2.0)
+    with caplog.at_level(logging.WARNING):
+        res = revoke_menu_session("sess_abc123", sock_path=sock_path, timeout=2.0)
     t.join()
     srv.close()
 
     assert res is False
+    assert any("handshake failed" in rec.message for rec in caplog.records)
+
+
+def test_revoke_error_reply(tmp_path, caplog):
+    sock_path = str(tmp_path / "menud.sock")
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    srv.bind(sock_path)
+    srv.listen(1)
+
+    def handle_server():
+        conn, _ = srv.accept()
+        req = b""
+        while b"\r\n\r\n" not in req:
+            req += conn.recv(1024)
+        conn.sendall(
+            b"HTTP/1.1 101 Switching Protocols\r\n"
+            b"Upgrade: websocket\r\n"
+            b"Connection: Upgrade\r\n"
+            b"Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n\r\n"
+        )
+        _read_ws_frame(conn)
+        _read_ws_frame(conn)
+        # Send error frame in reply
+        err_payload = json.dumps({
+            "v": 1,
+            "type": "error",
+            "id": "r:logout",
+            "code": "FORBIDDEN",
+            "message": "revoke is restricted to local admin principals on local.sock",
+        }).encode("utf-8")
+        conn.sendall(_make_server_frame(err_payload))
+        conn.close()
+
+    t = threading.Thread(target=handle_server)
+    t.start()
+
+    with caplog.at_level(logging.WARNING):
+        res = revoke_menu_session("sess_forbidden", sock_path=sock_path, timeout=1.0)
+    t.join()
+    srv.close()
+
+    assert res is False
+    assert any("FORBIDDEN" in rec.message for rec in caplog.records)
+
+
+def test_revoke_timeout(tmp_path, caplog):
+    sock_path = str(tmp_path / "menud.sock")
+    srv = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    srv.bind(sock_path)
+    srv.listen(1)
+
+    def handle_server():
+        conn, _ = srv.accept()
+        # Accept but hang without sending HTTP 101
+        conn.recv(1024)
+        # Keep connection open until client times out
+        threading.Event().wait(0.5)
+        conn.close()
+
+    t = threading.Thread(target=handle_server)
+    t.start()
+
+    with caplog.at_level(logging.WARNING):
+        res = revoke_menu_session("sess_timeout", sock_path=sock_path, timeout=0.1)
+    t.join()
+    srv.close()
+
+    assert res is False
+    assert any("timed out" in rec.message for rec in caplog.records)

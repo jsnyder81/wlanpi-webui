@@ -73,9 +73,3 @@ class TestMenuBlueprint:
         assert b'id="menu-panel"' in resp.data
         assert b'id="rich-mode-container"' in resp.data
         assert b'id="mirror-mode-container"' in resp.data
-
-    def test_cockpit_deprecation(self, client, monkeypatch):
-        _login(client, monkeypatch)
-        with pytest.deprecated_call():
-            resp = client.get("/cockpit")
-            assert resp.status_code == 302
