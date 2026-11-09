@@ -231,6 +231,93 @@ class TestLogout:
         resp = client.post("/logout", data={"csrf_token": csrf})
         assert resp.status_code == 302
 
+    def test_password_change_revokes_other_user_sessions(
+        self, client, session_store, monkeypatch
+    ):
+        from wlanpi_webui.auth import auth
+        from wlanpi_webui.utils import read_boot_id
+
+        calls = []
+        monkeypatch.setattr(
+            "wlanpi_webui.auth.auth.revoke_menu_session",
+            lambda sid: calls.append(sid),
+        )
+        monkeypatch.setattr(
+            "wlanpi_webui.auth.auth.pam_change_password",
+            lambda *a, **k: "success",
+        )
+
+        now = auth.boot_clock()
+        session_store.write_text(
+            json.dumps(
+                {
+                    "boot_id": read_boot_id(),
+                    "sessions": {
+                        "alice_sid_1": {"user": "alice", "created": now},
+                        "alice_sid_2": {"user": "alice", "created": now},
+                        "bob_sid_1": {"user": "bob", "created": now},
+                    },
+                }
+            )
+        )
+
+        csrf = _get_csrf(client)
+        resp = client.post(
+            "/change_password",
+            data={
+                "username": "alice",
+                "current_password": "old_password",
+                "new_password": "new_password_123",
+                "new_password_confirm": "new_password_123",
+                "csrf_token": csrf,
+            },
+        )
+        assert resp.status_code == 302
+        assert sorted(calls) == ["alice_sid_1", "alice_sid_2"]
+        on_disk = json.loads(session_store.read_text())["sessions"]
+        assert "alice_sid_1" not in on_disk
+        assert "alice_sid_2" not in on_disk
+        assert "bob_sid_1" in on_disk
+
+    def test_password_change_revokes_when_menud_raises(
+        self, client, session_store, monkeypatch
+    ):
+        from wlanpi_webui.auth import auth
+        from wlanpi_webui.utils import read_boot_id
+
+        def blow_up(sid):
+            raise RuntimeError("menud crashed")
+
+        monkeypatch.setattr("wlanpi_webui.auth.auth.revoke_menu_session", blow_up)
+        monkeypatch.setattr(
+            "wlanpi_webui.auth.auth.pam_change_password",
+            lambda *a, **k: "success",
+        )
+
+        now = auth.boot_clock()
+        session_store.write_text(
+            json.dumps(
+                {
+                    "boot_id": read_boot_id(),
+                    "sessions": {
+                        "alice_sid_1": {"user": "alice", "created": now},
+                    },
+                }
+            )
+        )
+        csrf = _get_csrf(client)
+        resp = client.post(
+            "/change_password",
+            data={
+                "username": "alice",
+                "current_password": "old_password",
+                "new_password": "new_password_123",
+                "new_password_confirm": "new_password_123",
+                "csrf_token": csrf,
+            },
+        )
+        assert resp.status_code == 302
+
 
 class TestMutatingRoutes:
     def test_get_rejected(self, client):

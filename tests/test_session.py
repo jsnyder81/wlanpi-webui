@@ -252,6 +252,11 @@ class TestServerSideSessions:
     ):
         from wlanpi_webui.utils import read_boot_id
 
+        revoked = []
+        monkeypatch.setattr(
+            "wlanpi_webui.auth.auth.revoke_menu_session",
+            lambda sid: revoked.append(sid),
+        )
         old = boot_clock() - app.config["MAX_SESSION_AGE"] - 1
         session_store.write_text(
             json.dumps(
@@ -268,6 +273,7 @@ class TestServerSideSessions:
         on_disk = json.loads(session_store.read_text())["sessions"]
         assert "old" not in on_disk and "live" in on_disk
         assert len(on_disk) == 2
+        assert "old" in revoked
 
     def test_store_from_another_boot_is_ignored(
         self, app, client, session_store, monkeypatch

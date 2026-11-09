@@ -206,6 +206,7 @@ def _update_sessions():
     """Read-modify-write the registry under the thread and file locks."""
     state = _state()
     path = _store_path()
+    pruned_sids = []
     with state["lock"], _file_lock(path):
         sessions = dict(_sessions())
         yield sessions
@@ -213,11 +214,17 @@ def _update_sessions():
         now = boot_clock()
         for sid in [s for s, r in sessions.items() if now - r["created"] > max_age]:
             del sessions[sid]
+            pruned_sids.append(sid)
         _write_store(path, sessions)
         # This process's copy is authoritative until the file changes again;
         # never fall back to a stale file that the write could not replace.
         state["sessions"] = sessions
         state["stamp"] = _stamp(path)
+    for sid in pruned_sids:
+        try:
+            revoke_menu_session(sid)
+        except Exception:
+            pass
 
 
 def session_is_valid() -> bool:
@@ -528,9 +535,16 @@ def _login_session(username: str) -> None:
 
 
 def _revoke_user_sessions(username: str) -> None:
+    deleted_sids = []
     with _update_sessions() as sessions:
         for sid in [s for s, rec in sessions.items() if rec.get("user") == username]:
             del sessions[sid]
+            deleted_sids.append(sid)
+    for sid in deleted_sids:
+        try:
+            revoke_menu_session(sid)
+        except Exception:
+            pass
 
 
 @bp.route("/login", methods=["GET", "POST"])
