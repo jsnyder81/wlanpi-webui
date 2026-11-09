@@ -222,6 +222,74 @@ describe("Menu WebSocket Reconnect and Stop Logic", () => {
     assert.equal(h.instances.length, 3, "third WebSocket connection attempted");
   });
 
+  it("resets consecutive 1006 counter on a non-1006 close path (1006, then 1000, then 1006 still reconnects)", () => {
+    const h = createTestHarness();
+    assert.equal(h.instances.length, 1);
+    const ws1 = h.instances[0];
+    ws1.open();
+
+    // First abnormal close (1006)
+    ws1.close(1006, "abnormal 1");
+    assert.equal(h.elements["menu-connection-status"].textContent, "Disconnected");
+    assert.equal(h.timers.size, 1);
+
+    // Reconnect fires -> ws2 connects and sends hello on open
+    assert.ok(h.fireTimer());
+    assert.equal(h.instances.length, 2);
+    const ws2 = h.instances[1];
+    ws2.open();
+    assert.equal(ws2.sent.length, 1, "hello sent on open");
+
+    // ws2 closes cleanly on a non-1006 path (code 1000 normal close)
+    // Pins menu.js:116: consecutiveAbnormalCloses must reset on non-1006 close
+    ws2.close(1000, "normal closure");
+    assert.equal(h.elements["menu-connection-status"].textContent, "Disconnected");
+    assert.equal(h.timers.size, 1, "reconnect timer scheduled after non-1006 close");
+
+    // Reconnect fires -> ws3 connects
+    assert.ok(h.fireTimer());
+    assert.equal(h.instances.length, 3);
+    const ws3 = h.instances[2];
+    ws3.open();
+
+    // Another 1006 abnormal close: must NOT stop reconnecting at 2 total because counter was reset
+    ws3.close(1006, "abnormal 2");
+    assert.equal(h.elements["menu-connection-status"].textContent, "Disconnected");
+    assert.notEqual(h.elements["menu-connection-status"].textContent, "Unavailable");
+    assert.equal(h.timers.size, 1, "reconnect timer scheduled because counter was reset by non-1006 close");
+
+    // Next reconnect succeeds in scheduling ws4
+    assert.ok(h.fireTimer());
+    assert.equal(h.instances.length, 4, "reconnect loop continues");
+  });
+
+  it("resets consecutive 1006 counter after successful frame exchange and non-1006 close", () => {
+    const h = createTestHarness();
+    assert.equal(h.instances.length, 1);
+    const ws1 = h.instances[0];
+    ws1.open();
+    ws1.close(1006, "abnormal 1");
+    assert.equal(h.timers.size, 1);
+    h.fireTimer();
+
+    assert.equal(h.instances.length, 2);
+    const ws2 = h.instances[1];
+    ws2.open();
+    assert.equal(ws2.sent.length, 1, "hello sent on open");
+    ws2.receiveFrame({ v: 1, type: "welcome", id: "h:welcome", roles: ["admin"], session: "new" });
+    ws2.close(1000, "clean close after frame exchange");
+    assert.equal(h.timers.size, 1);
+    h.fireTimer();
+
+    assert.equal(h.instances.length, 3);
+    const ws3 = h.instances[2];
+    ws3.open();
+    ws3.close(1006, "abnormal after exchange");
+    assert.equal(h.elements["menu-connection-status"].textContent, "Disconnected");
+    assert.notEqual(h.elements["menu-connection-status"].textContent, "Unavailable");
+    assert.equal(h.timers.size, 1, "reconnect loop continues after frame exchange and non-1006 close");
+  });
+
   it("stops reconnect retries on 4401 session revocation without showing menu-unavailable fallback", () => {
     const h = createTestHarness();
     assert.equal(h.instances.length, 1);

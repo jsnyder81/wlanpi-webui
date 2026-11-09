@@ -335,6 +335,7 @@ class TestCli:
         assert starts[0].get_json() == {"ok": True, "resumed": False}
         assert cli_module._session is created[0]
 
+    @pytest.mark.skipif(not shutil.which("ps"), reason="test requires procps (ps)")
     def test_shell_owns_its_terminal(self, client, monkeypatch):
         # setsid --ctty: the shell leads its own session with the PTY as its
         # controlling terminal, so job control (Ctrl-Z, fg) works.
