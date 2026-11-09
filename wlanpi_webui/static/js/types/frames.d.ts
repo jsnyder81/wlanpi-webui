@@ -19,6 +19,7 @@ export type WlanpiMenudWebSocketFrameProtocolV1 =
   | Page
   | Cancel
   | Revoke
+  | Nav
   | Welcome
   | Menu
   | View
@@ -219,6 +220,15 @@ export type Revoke = Envelope & {
   id: unknown;
   type: "revoke";
   webui_session: string;
+};
+/**
+ * C to S. Move the session cursor to a node and receive the resulting view. Ancestors are expanded. FORBIDDEN if the node is hidden for this session or the role is too low; NOT_FOUND if the node does not exist.
+ */
+export type Nav = Envelope & {
+  v: unknown;
+  id: unknown;
+  type: "nav";
+  node: NodeId;
 };
 /**
  * S to C. Reply to hello. After welcome the server sends menu (unless resumed with an unchanged menu revision) and, in thin mode, the current view.

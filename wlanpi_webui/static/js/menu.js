@@ -225,13 +225,22 @@
     }
   }
 
+  function updateModeBadge(frame) {
+    var modeBadge = document.getElementById("menu-session-kind");
+    if (!modeBadge) return;
+    var mode = frame && frame.mode ? frame.mode : currentMode;
+    var session = frame && frame.session ? frame.session : currentSession;
+    if (mode === "thin") {
+      modeBadge.textContent = session === "default" ? "Thin (mirror panel)" : "Thin (private)";
+    } else {
+      modeBadge.textContent = "Rich (private)";
+    }
+  }
+
   function onWelcome(frame) {
     console.log("[menu] welcome frame:", frame);
     setStatus("Active (" + frame.mode + ")", "uk-badge-success");
-    var modeBadge = document.getElementById("menu-session-kind");
-    if (modeBadge) {
-      modeBadge.textContent = frame.session === "default" ? "Mirror (Shared)" : "Rich (Private)";
-    }
+    updateModeBadge(frame);
   }
 
   function onMenu(frame) {
@@ -250,7 +259,39 @@
     lastThinView = frame;
     if (currentMode === "thin") {
       renderMirrorView(frame);
+    } else if (currentMode === "rich") {
+      renderRichView(frame);
     }
+  }
+
+  function renderRichView(frame) {
+    var container = document.getElementById("rich-job-results");
+    if (!container) return;
+
+    var placeholder = container.querySelector(".uk-text-muted.uk-padding-small");
+    if (placeholder && placeholder.parentElement === container) {
+      container.removeChild(placeholder);
+    }
+
+    var elId = "view-card-" + (frame.node || "nav");
+    var card = document.getElementById(elId);
+    if (!card) {
+      card = document.createElement("div");
+      card.id = elId;
+      card.className = "uk-card uk-card-default uk-card-body uk-card-small uk-border-rounded uk-margin-small-bottom job-card";
+      container.insertBefore(card, container.firstChild);
+    }
+
+    var html = '<div class="uk-flex uk-flex-between uk-flex-middle uk-margin-small-bottom">';
+    html += '<div><span class="uk-text-bold">' + window.ViewBlocks.escapeHtml(frame.title || frame.node || "View") + "</span></div>";
+    html += '<div><span class="uk-badge uk-badge-primary">VIEW</span></div>';
+    html += "</div>";
+
+    var blocks = Array.isArray(frame.blocks) ? frame.blocks : [];
+    html += '<div class="job-result-blocks">' + window.ViewBlocks.renderBlocks(blocks) + "</div>";
+
+    card.innerHTML = html;
+    window.ViewBlocks.mountQrCodes(card);
   }
 
   function onJob(frame) {
@@ -364,6 +405,17 @@
     container.innerHTML = html;
   }
 
+  function sendNav(nodeId) {
+    var mid = nextId("nav");
+    var frame = {
+      v: 1,
+      type: "nav",
+      id: mid,
+      node: nodeId,
+    };
+    sendFrame(frame);
+  }
+
   function handleNodeClick(nodeId, isBranch) {
     var node = menuById[nodeId];
     if (!node) return;
@@ -371,11 +423,24 @@
     if (isBranch) {
       currentBranchId = nodeId;
       renderRichMenuTree();
+      if (node.view) {
+        sendNav(nodeId);
+      }
       return;
     }
 
     // Action node selected
-    selectActionNode(node);
+    var hasParams = Array.isArray(node.params) && node.params.length > 0;
+    var hasConfirm = Boolean(node.confirm);
+
+    if (!hasParams && !hasConfirm) {
+      // No-param view/status action: invoke immediately and hide detail pane
+      var detailEl = document.getElementById("rich-action-detail");
+      if (detailEl) detailEl.style.display = "none";
+      invokeNode(node.id, {});
+    } else {
+      selectActionNode(node);
+    }
   }
 
   function selectActionNode(node) {
@@ -463,6 +528,11 @@
   function renderJobCard(job) {
     var container = document.getElementById("rich-job-results");
     if (!container) return;
+
+    var placeholder = container.querySelector(".uk-text-muted.uk-padding-small");
+    if (placeholder && placeholder.parentElement === container) {
+      container.removeChild(placeholder);
+    }
 
     var elId = "job-card-" + job.job_id;
     var card = document.getElementById(elId);
@@ -696,6 +766,34 @@
     }
   };
 
+  function applyMode(modeKey) {
+    disconnect();
+    if (modeKey === "thin-mirror" || modeKey === "mirror") {
+      currentMode = "thin";
+      currentSession = "default";
+      var richCont = document.getElementById("rich-mode-container");
+      var mirrorCont = document.getElementById("mirror-mode-container");
+      if (richCont) richCont.style.display = "none";
+      if (mirrorCont) mirrorCont.style.display = "block";
+    } else if (modeKey === "thin-private" || modeKey === "thin") {
+      currentMode = "thin";
+      currentSession = "new";
+      var richCont2 = document.getElementById("rich-mode-container");
+      var mirrorCont2 = document.getElementById("mirror-mode-container");
+      if (richCont2) richCont2.style.display = "none";
+      if (mirrorCont2) mirrorCont2.style.display = "block";
+    } else {
+      currentMode = "rich";
+      currentSession = "new";
+      var richCont3 = document.getElementById("rich-mode-container");
+      var mirrorCont3 = document.getElementById("mirror-mode-container");
+      if (richCont3) richCont3.style.display = "block";
+      if (mirrorCont3) mirrorCont3.style.display = "none";
+    }
+    updateModeBadge();
+    connect();
+  }
+
   // ---------------------------------------------------------------------------
   // DOM Event Bindings
   // ---------------------------------------------------------------------------
@@ -704,24 +802,19 @@
     var panel = document.getElementById("menu-panel");
     if (!panel) return;
 
-    // Toggle mirror mode switch
+    // Mode switch control (three-way: rich, thin-private, thin-mirror)
+    var modeSelect = document.getElementById("menu-mode-select");
+    if (modeSelect) {
+      modeSelect.onchange = function () {
+        applyMode(modeSelect.value);
+      };
+    }
+
+    // Legacy toggle mirror mode switch (for test harnesses or backward compat)
     var mirrorToggle = document.getElementById("toggle-mirror-mode");
     if (mirrorToggle) {
       mirrorToggle.onchange = function () {
-        var isMirror = mirrorToggle.checked;
-        disconnect();
-        if (isMirror) {
-          currentMode = "thin";
-          currentSession = "default";
-          document.getElementById("rich-mode-container").style.display = "none";
-          document.getElementById("mirror-mode-container").style.display = "block";
-        } else {
-          currentMode = "rich";
-          currentSession = "new";
-          document.getElementById("rich-mode-container").style.display = "block";
-          document.getElementById("mirror-mode-container").style.display = "none";
-        }
-        connect();
+        applyMode(mirrorToggle.checked ? "thin-mirror" : "rich");
       };
     }
 
