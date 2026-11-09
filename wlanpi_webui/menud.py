@@ -75,6 +75,11 @@ def revoke_menu_session(sid: str, sock_path: str = MENUD_LOCAL_SOCK, timeout: fl
     """Best-effort notify wlanpi-menud over local.sock to revoke a WebUI session.
 
     Never raises; returns True if the revoke succeeded, False on error or timeout.
+
+    The protocol has no success reply frame for revoke; silence indicates acceptance.
+    A short 0.2s read window is used after sending the revoke frame to check for any
+    immediate error frame (e.g. FORBIDDEN or BAD_REQUEST) without blocking the HTTP
+    logout flow. Replies or errors arriving after this window do not block logout.
     """
     if not sid:
         return False

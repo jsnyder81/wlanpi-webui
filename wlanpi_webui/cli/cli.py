@@ -98,14 +98,30 @@ class Session:
 
     def close(self) -> None:
         try:
-            os.killpg(os.getpgid(self.proc.pid), signal.SIGHUP)
+            pgid = os.getpgid(self.proc.pid)
+            if pgid == os.getpgrp():
+                for _ in range(50):
+                    time.sleep(0.002)
+                    if self.proc.poll() is not None:
+                        break
+                    pgid = os.getpgid(self.proc.pid)
+                    if pgid != os.getpgrp():
+                        break
+            if pgid != os.getpgrp():
+                os.killpg(pgid, signal.SIGHUP)
+            else:
+                self.proc.send_signal(signal.SIGHUP)
         except OSError:
             pass
         try:
             self.proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
             try:
-                os.killpg(os.getpgid(self.proc.pid), signal.SIGKILL)
+                pgid = os.getpgid(self.proc.pid)
+                if pgid != os.getpgrp():
+                    os.killpg(pgid, signal.SIGKILL)
+                else:
+                    self.proc.kill()
             except OSError:
                 pass
         try:
