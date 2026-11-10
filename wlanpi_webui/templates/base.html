@@ -23,6 +23,8 @@
   <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/uikit.min.css') }}">
   <!--App CSS-->
   <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/app.css') }}">
+  <!--Device menu CSS-->
+  <link rel="stylesheet" type="text/css" href="{{ url_for('static', filename='css/menu.css') }}">
   <!--UIkit JS-->
   <script src="{{ url_for('static', filename='js/uikit.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/uikit-icons.min.js') }}" defer></script>
@@ -137,7 +139,14 @@
   <!--JS-->
   <script src="{{ url_for('static', filename='js/qrcode.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/view_blocks.js') }}" defer></script>
-  <script src="{{ url_for('static', filename='js/menu.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/menu/connection.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/menu/store.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/menu/router.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/menu/pages.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/menu/prompt_dialog.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/menu/activity.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/menu/front_panel.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/menu/main.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/profiler.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/speedtest_results.js') }}" defer></script>
   <script src="{{ url_for('static', filename='js/cli.js') }}" defer></script>

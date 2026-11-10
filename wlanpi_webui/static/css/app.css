@@ -518,11 +518,6 @@ h6 {
     background: var(--surface-2);
 }
 
-.uk-table-striped > tr:nth-of-type(odd),
-.uk-table-striped tbody tr:nth-of-type(odd) {
-    background: transparent;
-}
-
 /* Numbers line up down a column; timestamps, MACs and file names opt in
    to mono per cell. */
 .uk-table td {

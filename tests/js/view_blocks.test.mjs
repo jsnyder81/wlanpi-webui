@@ -73,12 +73,12 @@ describe("ViewBlocks Renderer against Recorded Frame Fixtures", () => {
     const html = ViewBlocks.renderBlock(tableBlock);
     assert.match(html, /block-table/);
     assert.match(html, /<table/);
-    assert.match(html, /<th>SSID<\/th>/);
-    assert.match(html, /<th class="uk-text-right">CH<\/th>/);
-    assert.match(html, /<th class="uk-text-right">RSSI<\/th>/);
-    assert.match(html, /<td>CorpNet<\/td>/);
-    assert.match(html, /<td class="uk-text-right">36<\/td>/);
-    assert.match(html, /<td class="uk-text-right">-51<\/td>/);
+    assert.match(html, /<th[^>]*>SSID<\/th>/);
+    assert.match(html, /<th[^>]*class="uk-text-right"[^>]*>CH<\/th>/);
+    assert.match(html, /<th[^>]*class="uk-text-right"[^>]*>RSSI<\/th>/);
+    assert.match(html, /<td[^>]*>CorpNet<\/td>/);
+    assert.match(html, /<td[^>]*class="uk-text-right"[^>]*>36<\/td>/);
+    assert.match(html, /<td[^>]*class="uk-text-right"[^>]*>-51<\/td>/);
   });
 
   it("renders list blocks with cursor selection from view.mirror.json", () => {
@@ -94,7 +94,7 @@ describe("ViewBlocks Renderer against Recorded Frame Fixtures", () => {
     assert.match(html, /data-index="1"/);
     // Index 1 was selected in fixture
     assert.match(html, /›/);
-    assert.match(html, /uk-text-primary/);
+    assert.match(html, /class="list-item list-item-selected" data-index="1"/);
   });
 
   it("renders qr blocks with payload data and caption from job.result.blocks.json", () => {
@@ -153,7 +153,8 @@ describe("ViewBlocks Renderer against Recorded Frame Fixtures", () => {
       label: "Scanning",
       text: "Scanning channels...",
     });
-    assert.match(indetHtml, /<progress class="uk-progress uk-margin-remove"><\/progress>/);
+    assert.match(indetHtml, /<progress class="uk-progress uk-margin-remove"[^>]*><\/progress>/);
+    assert.doesNotMatch(indetHtml, /<progress[^>]*value=/);
     assert.match(indetHtml, /Scanning channels\.\.\./);
   });
 
@@ -198,5 +199,117 @@ describe("ViewBlocks Renderer against Recorded Frame Fixtures", () => {
     assert.match(html, /block-qr/);
     assert.match(html, /block-progress/);
     assert.match(html, /block-confirm/);
+  });
+});
+
+// The redesign's edits to the shared renderer (design section 5.3), on a real DOM.
+describe("ViewBlocks on the themed menu surface", () => {
+  const { JSDOM } = require("jsdom");
+  const mount = (html) => {
+    const dom = new JSDOM(`<!DOCTYPE html><body><div id="m">${html}</div></body>`);
+    return { window: dom.window, root: dom.window.document.getElementById("m") };
+  };
+  const ALL = [
+    { type: "text", text: "plain" },
+    { type: "text", style: "heading", text: "Heading" },
+    { type: "text", style: "mono", text: "mono" },
+    { type: "kv", text: "k: v", items: [{ key: "k", value: "v" }, { key: "PSK", value: "hunter2", secret: true }] },
+    { type: "table", text: "t", columns: [{ key: "a", label: "A" }, { key: "b", label: "B", priority: 2, align: "right" }], rows: [["1", 2]] },
+    { type: "list", text: "l", items: [{ label: "One", node: "net.ifaces", branch: false }, { label: "Two", detail: "d" }], selected: 1 },
+    { type: "qr", text: "WIFI:x", data: "WIFI:x", caption: "Join" },
+    { type: "status", level: "warn", text: "Careful" },
+    { type: "progress", text: "40%", pct: 40, label: "Working" },
+    { type: "confirm", text: "Sure?", prompt_id: "p0001", message: "Sure?", confirm_label: "Yes", cancel_label: "No" },
+    { type: "from_the_future", text: "fallback text" },
+  ];
+
+  it("uses no light-theme utility, inline style, inline handler or colour literal for any block type", () => {
+    for (const opts of [undefined, { interactive: false, links: false }]) {
+      const html = ViewBlocks.renderBlocks(ALL, opts);
+      assert.doesNotMatch(html, /uk-background-muted|uk-table-striped|uk-card-secondary/);
+      assert.doesNotMatch(html, /\sstyle=/);
+      assert.doesNotMatch(html, /\son[a-z]+=/);
+      assert.doesNotMatch(html, /#[0-9a-fA-F]{3,8}\b|rgba?\(/);
+    }
+  });
+
+  it("every block type renders, and an unknown type falls back to its text", () => {
+    const { root } = mount(ViewBlocks.renderBlocks(ALL));
+    assert.equal(root.querySelectorAll(".view-block").length, ALL.length);
+    assert.equal(root.querySelector(".block-fallback").textContent, "fallback text");
+    assert.ok(root.children instanceof root.ownerDocument.defaultView.HTMLCollection);
+  });
+
+  it("tables carry column index and priority as data attributes, plus a hidden details expander", () => {
+    const { root } = mount(ViewBlocks.renderBlock(ALL[4]));
+    const heads = root.querySelectorAll("thead th[data-col]");
+    assert.equal(heads.length, 2);
+    assert.equal(heads[0].hasAttribute("data-priority"), false);
+    assert.equal(heads[1].getAttribute("data-priority"), "2");
+    assert.equal(root.querySelectorAll('tbody td[data-col="1"]').length, 1);
+    const expander = root.querySelector("tbody .table-expander-cell");
+    assert.equal(expander.hidden, true, "hidden until the page drops a column");
+    const btn = expander.querySelector("button");
+    assert.equal(btn.getAttribute("aria-expanded"), "false");
+    // Dropped column -> the row's details list it.
+    root.querySelectorAll('[data-col="1"]').forEach((el) => { el.hidden = true; });
+    ViewBlocks.handleClick({ target: btn });
+    assert.equal(btn.getAttribute("aria-expanded"), "true");
+    assert.equal(root.querySelector(".table-detail-row dt").textContent, "B");
+    assert.equal(root.querySelector(".table-detail-row dd").textContent, "2");
+    ViewBlocks.handleClick({ target: btn });
+    assert.equal(root.querySelector(".table-detail-row"), null);
+  });
+
+  it("list items with a node are links to #<node>; without links they are plain rows", () => {
+    const { root } = mount(ViewBlocks.renderBlock(ALL[5]));
+    const link = root.querySelector("li[data-node] a");
+    assert.equal(link.getAttribute("href"), "#net.ifaces");
+    assert.equal(root.querySelectorAll("a").length, 1, "an item without a node is not a link");
+    const selected = root.querySelector(".list-item-selected");
+    assert.equal(selected.getAttribute("data-index"), "1");
+    assert.equal(selected.getAttribute("aria-current"), "true");
+    const plain = mount(ViewBlocks.renderBlock(ALL[5], { links: false })).root;
+    assert.equal(plain.querySelector("a"), null);
+    assert.equal(plain.querySelectorAll(".list-item").length, 2);
+  });
+
+  it("the secret toggle is delegated and exposes aria-pressed", () => {
+    const { root, window } = mount(ViewBlocks.renderBlock(ALL[3]));
+    const btn = root.querySelector(".toggle-secret-btn");
+    assert.equal(btn.getAttribute("onclick"), null);
+    assert.equal(btn.getAttribute("aria-pressed"), "false");
+    assert.equal(root.querySelector(".kv-secret-plain").hidden, true);
+    root.addEventListener("click", (evt) => ViewBlocks.handleClick(evt));
+    btn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    assert.equal(btn.getAttribute("aria-pressed"), "true");
+    assert.equal(btn.textContent, "Hide");
+    assert.equal(root.querySelector(".kv-secret-plain").hidden, false);
+    assert.equal(root.querySelector(".kv-secret-mask").hidden, true);
+    btn.dispatchEvent(new window.MouseEvent("click", { bubbles: true }));
+    assert.equal(btn.getAttribute("aria-pressed"), "false");
+    assert.equal(root.querySelector(".kv-secret-plain").hidden, true);
+    assert.equal(typeof globalThis.wlanpiToggleSecret, "undefined");
+    assert.equal(ViewBlocks.handleClick({ target: root }), false, "other clicks are not block controls");
+  });
+
+  it("confirm has a non-interactive variant for a key-driven screen", () => {
+    const interactive = mount(ViewBlocks.renderBlock(ALL[9])).root;
+    assert.equal(interactive.querySelectorAll("button").length, 2);
+    const still = mount(ViewBlocks.renderBlock({ ...ALL[9], selected: "confirm" }, { interactive: false })).root;
+    assert.equal(still.querySelectorAll("button").length, 0);
+    assert.match(still.textContent, /Sure\?/);
+    assert.deepEqual(Array.from(still.querySelectorAll(".confirm-choice")).map((e) => e.textContent), ["No", "Yes"]);
+    assert.equal(still.querySelector(".confirm-choice-selected").textContent, "Yes");
+    const cancelSelected = mount(ViewBlocks.renderBlock(ALL[9], { interactive: false })).root;
+    assert.equal(cancelSelected.querySelector(".confirm-choice-selected").textContent, "No", "the cursor starts on Cancel");
+  });
+
+  it("status carries an icon and a word, not colour alone", () => {
+    for (const [level, word] of [["ok", "OK"], ["info", "Info"], ["warn", "Warning"], ["error", "Error"]]) {
+      const { root } = mount(ViewBlocks.renderBlock({ type: "status", level, text: "x" }));
+      assert.ok(root.querySelector("[uk-icon]"), level);
+      assert.match(root.textContent, new RegExp("^" + word + ":"), level);
+    }
   });
 });

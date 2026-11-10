@@ -57,12 +57,30 @@ class TestMenuBlueprint:
         assert resp.status_code == 200
         assert b'<html' in resp.data
         assert b'id="menu-panel"' in resp.data
-        assert b'Mirror panel' in resp.data
-        assert b'id="rich-mode-container"' in resp.data
-        assert b'id="mirror-mode-container"' in resp.data
-        assert b'data-dpad-key="center"' in resp.data
+        assert b'data-panel="menu"' in resp.data
+        # One surface: the shell's mount points, and no protocol mode control.
+        for mount in (b'id="menu-statusbar"', b'id="menu-sidebar"', b'id="menu-page"',
+                      b'id="menu-front-panel"', b'id="menu-dialog"', b'id="menu-live"',
+                      b'id="menu-banner"'):
+            assert mount in resp.data
+        assert b'menu-mode-select' not in resp.data
+        assert b'Thin' not in resp.data
+        assert b'Mirror' not in resp.data
+        assert b'css/menu.css' in resp.data
         assert b'view_blocks.js' in resp.data
-        assert b'menu.js' in resp.data
+        for script in (b'connection', b'store', b'router', b'pages', b'prompt_dialog',
+                       b'activity', b'front_panel', b'main'):
+            assert b'js/menu/' + script + b'.js' in resp.data
+        assert b'js/menu.js' not in resp.data
+
+    def test_scripts_load_in_dependency_order(self, client, monkeypatch):
+        _login(client, monkeypatch)
+        html = client.get("/menu").data
+        order = [html.index(b'js/' + name) for name in (
+            b'view_blocks.js', b'menu/connection.js', b'menu/store.js', b'menu/router.js',
+            b'menu/pages.js', b'menu/prompt_dialog.js', b'menu/activity.js',
+            b'menu/front_panel.js', b'menu/main.js')]
+        assert order == sorted(order)
 
     def test_renders_htmx_partial(self, client, monkeypatch):
         _login(client, monkeypatch)
@@ -71,5 +89,7 @@ class TestMenuBlueprint:
         # Should not include full <html> envelope in htmx swap
         assert b'<html' not in resp.data
         assert b'id="menu-panel"' in resp.data
-        assert b'id="rich-mode-container"' in resp.data
-        assert b'id="mirror-mode-container"' in resp.data
+        assert b'id="menu-page"' in resp.data
+        assert b'id="menu-front-panel"' in resp.data
+        # The shell carries no inline styles and no menu content of its own.
+        assert b'style=' not in resp.data
