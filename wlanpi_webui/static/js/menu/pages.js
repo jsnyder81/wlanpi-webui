@@ -1075,6 +1075,17 @@
         }
       }
       wrapper.setAttribute("data-dropped", String(dropped));
+      // What still does not fit scrolls sideways; a scrolling region must be
+      // reachable by keyboard.
+      if (overflows(wrapper, table)) {
+        wrapper.setAttribute("tabindex", "0");
+        wrapper.setAttribute("role", "region");
+        wrapper.setAttribute("aria-label", "Table, scrolls sideways");
+      } else {
+        wrapper.removeAttribute("tabindex");
+        wrapper.removeAttribute("role");
+        wrapper.removeAttribute("aria-label");
+      }
     }
   }
 

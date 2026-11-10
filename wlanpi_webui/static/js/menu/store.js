@@ -17,6 +17,7 @@
 
   var RESULT_LRU = 20;
   var MAX_ROWS = 1000;
+  var MAX_PENDING_ANSWERS = 4;
   var ROOT = "";
 
   var STATUS = {
@@ -459,6 +460,15 @@
       kind: req.kind, node: req.node || null, jobId: req.jobId || null, promptId: req.promptId || null,
       prompt: req.prompt || null,
     };
+    if (req.kind === "answer") {
+      // An accepted answer has no reply of its own, so nothing ever clears
+      // it: keep only the few most recent to route a refusal.
+      var answers = [];
+      for (var rid in next.pending) {
+        if (next.pending[rid].kind === "answer") answers.push(rid);
+      }
+      while (answers.length > MAX_PENDING_ANSWERS) delete next.pending[answers.shift()];
+    }
     if (req.kind === "invoke") {
       var prev = state.results[req.node] || null;
       touchResult(next, req.node, {

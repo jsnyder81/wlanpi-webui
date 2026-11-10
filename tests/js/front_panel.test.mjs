@@ -176,14 +176,14 @@ describe("Front panel: keys", () => {
     assert.equal(caption("left"), "Back");
     assert.equal(caption("center"), "Select");
     assert.equal(caption("up"), null);
-    assert.equal(c.$('[data-fp-key="left"]').getAttribute("aria-label"), "Left: Back");
+    assert.equal(c.$('[data-fp-key="left"]').getAttribute("aria-label"), "Left Back");
     assert.equal(c.$('[data-fp-key="up"]').getAttribute("aria-label"), "Up");
 
     c.paneWs.receive(view("view.menu.json", { hints: { left: "Leave", center: "Again", key1: "Rescan", key3: "Save" } }));
     assert.equal(caption("left"), "Leave", "captions follow the server");
     assert.deepEqual(c.$$("[data-fp-key]").map((b) => b.getAttribute("data-fp-key")), ["up", "left", "center", "right", "down", "key1", "key3"],
       "Key 1 to Key 3 appear only when the hints name them");
-    assert.equal(c.$('[data-fp-key="key1"]').getAttribute("aria-label"), "Key 1: Rescan");
+    assert.equal(c.$('[data-fp-key="key1"]').getAttribute("aria-label"), "Key 1 Rescan");
   });
 
   it("buttons send input frames", () => {

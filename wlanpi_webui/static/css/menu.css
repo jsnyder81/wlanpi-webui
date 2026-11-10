@@ -316,6 +316,7 @@
 .menu-sidebar .uk-nav-default .uk-nav-sub a {
     display: flex;
     flex-direction: column;
+    align-items: flex-start;
     justify-content: center;
     min-height: 36px;
     padding: var(--space-1) var(--space-2);
@@ -337,7 +338,8 @@
 }
 
 /* Current page: weight and a bar as well as colour. */
-.menu-sidebar .uk-nav-default a[aria-current="page"] {
+/* (The id outweighs UIkit's own .uk-nav-sub li.uk-active > a colour.) */
+#menu-sidebar .uk-nav-default a[aria-current="page"] {
     border-left-color: var(--brand-ink);
     color: var(--brand-ink);
     font-weight: 700;

@@ -251,10 +251,11 @@
           var caption = hints[k.key];
           pad.appendChild(h(doc, "button.uk-button.uk-button-default.menu-ctl.menu-fp-key.menu-fp-key-" + k.area, {
             type: "button", "data-fp-key": k.key, disabled: !enabled, "data-focus-key": "fp:" + k.key,
-            "aria-label": caption ? k.name + ": " + caption : k.name,
+            // The name contains the visible text ("OK Select"), as speech input needs.
+            "aria-label": caption ? k.name + " " + caption : k.name,
           }, [
             h(doc, "span.menu-fp-key-glyph", { "aria-hidden": "true", text: k.glyph }),
-            caption ? h(doc, "span.menu-fp-key-caption", { "aria-hidden": "true", text: caption }) : null,
+            caption ? [" ", h(doc, "span.menu-fp-key-caption", { "aria-hidden": "true", text: caption })] : null,
           ]));
         }
         keys.appendChild(pad);
@@ -266,7 +267,7 @@
           any = true;
           extra.appendChild(h(doc, "button.uk-button.uk-button-default.uk-button-small.menu-ctl.menu-fp-key", {
             type: "button", "data-fp-key": e.key, disabled: !enabled, "data-focus-key": "fp:" + e.key,
-            "aria-label": e.name + ": " + hints[e.key],
+            "aria-label": e.name + " " + hints[e.key],
           }, [h(doc, "span.menu-fp-key-caption", { "aria-hidden": "true", text: hints[e.key] })]));
         }
         if (any) keys.appendChild(extra);

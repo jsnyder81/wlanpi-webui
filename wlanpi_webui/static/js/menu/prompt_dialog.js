@@ -183,11 +183,7 @@
       var cancelLabel = isConfirm ? prompt.cancel_label || "Cancel" : "Cancel";
       var okLabel = isConfirm ? prompt.confirm_label || "Confirm" : "Continue";
 
-      var form = h(doc, "form.uk-modal-dialog.uk-modal-body.menu-dialog-panel", {
-        role: "dialog", "aria-modal": "true", "aria-labelledby": "menu-dialog-title",
-        "aria-describedby": prompt.message ? "menu-dialog-message" : null, novalidate: "",
-        "data-prompt-id": prompt.prompt_id, "data-kind": prompt.kind,
-      }, [
+      var form = h(doc, "form.menu-dialog-form", { novalidate: "" }, [
         h(doc, "h3.uk-modal-title.menu-dialog-title", { id: "menu-dialog-title", text: heading }),
         buildBody(prompt),
         h(doc, "p.menu-dialog-error", { role: "alert", hidden: true }),
@@ -199,7 +195,12 @@
           ]),
         ]),
       ]);
-      var rootEl = h(doc, "div.uk-modal.uk-open.menu-dialog", null, form);
+      var dialogEl = h(doc, "div.uk-modal-dialog.uk-modal-body.menu-dialog-panel", {
+        role: "dialog", "aria-modal": "true", "aria-labelledby": "menu-dialog-title",
+        "aria-describedby": prompt.message ? "menu-dialog-message" : null,
+        "data-prompt-id": prompt.prompt_id, "data-kind": prompt.kind,
+      }, form);
+      var rootEl = h(doc, "div.uk-modal.uk-open.menu-dialog", null, dialogEl);
       form.addEventListener("submit", onSubmit);
       rootEl.addEventListener("keydown", onKeydown);
       rootEl.querySelector("[data-prompt-cancel]").addEventListener("click", function () {

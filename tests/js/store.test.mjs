@@ -370,6 +370,24 @@ describe("MenuStore bounds", () => {
   });
 });
 
+describe("MenuStore pending requests stay bounded", () => {
+  it("answers, which get no reply when accepted, do not accumulate", () => {
+    let s = fresh();
+    for (let i = 0; i < 50; i++) {
+      const p = assertS2C({ v: 1, type: "prompt", id: "s:9", prompt_id: "p00" + i, job_id: "j00" + i, node: "tools.survey", kind: "string", title: "Name" });
+      s = Store.applyFrame(s, p, T0);
+      s = Store.trackRequest(s, { id: "a" + i, kind: "answer", promptId: p.prompt_id, prompt: s.prompt });
+      s = Store.closePrompt(s, p.prompt_id);
+    }
+    assert.ok(Object.keys(s.pending).length <= 4, `pending: ${Object.keys(s.pending).length}`);
+    assert.ok(s.pending.a49, "the newest answer can still be refused");
+    // Other request kinds are not touched by that pruning.
+    s = Store.trackRequest(s, { id: "c1", kind: "invoke", node: "net.ifaces" });
+    s = Store.trackRequest(s, { id: "a50", kind: "answer", promptId: "p0050", prompt: null });
+    assert.ok(s.pending.c1);
+  });
+});
+
 describe("MenuStore topics and reconnect", () => {
   it("a seq gap without a snapshot marks the topic stale until the next snapshot", () => {
     let s = fresh();
