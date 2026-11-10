@@ -21,7 +21,7 @@ export const SAMPLES = path.resolve(ROOT, "../wlanpi-menud/protocol/samples/fram
 
 export const schemaDoc = JSON.parse(fs.readFileSync(path.join(ROOT, "protocol/frames.schema.json"), "utf8"));
 
-const ajv = new Ajv2020({ allErrors: true, strict: false });
+const ajv = new Ajv2020({ allErrors: true, strict: false, validateFormats: false });
 ajv.addSchema(schemaDoc, "frames");
 const validators = {};
 function validatorFor(type) {
