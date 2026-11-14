@@ -7,6 +7,7 @@
  *
  *   status bar · sidebar and filter · Home · branch page · action page
  *   (form, run control, result states) · not-available · banners · notices
+ *   · status tiles (complications) and their customize page
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
@@ -198,6 +199,61 @@
   var LEVEL_ICON = { info: "info", warn: "warning", error: "close", ok: "check" };
   var LEVEL_ALERT = { info: "uk-alert-primary", warn: "uk-alert-warning", error: "uk-alert-danger", ok: "uk-alert-success" };
 
+  // ---------------------------------------------------------------- status tiles (spec 2.6, 4.5)
+
+  // This surface's display profile.
+  var SURFACE = "webui";
+  // Status bar: at most this many tiles before the +N chip (spec 4.5).
+  var BAR_MAX = 12;
+  // Colour is never the only signal: each status has its own word and,
+  // where it judges, its own icon. info carries no tag.
+  var TILE_WORD = { ok: "OK", info: "", warn: "Warning", error: "Error", off: "Off", unknown: "No reading" };
+  var TILE_ICON = { ok: "check", warn: "warning", error: "close" };
+  var UNKNOWN_VALUE = "\u2014";
+  // Profiles the customize page offers, with the screen each one draws.
+  var PROFILE_NAMES = [
+    ["webui", "This WebUI (status bar and Home)"],
+    ["panel", "Front panel rows"],
+    ["panel.strip", "Front panel status line"],
+    ["tui", "Terminal menu footer"],
+  ];
+  // How many tiles each profile's screen fits (spec 4.5, 128 px panel, no alerts).
+  var PROFILE_FITS = { webui: BAR_MAX, panel: 7, "panel.strip": 3, tui: 8 };
+  var PROFILE_FITS_WHERE = { webui: "the status bar", panel: "the front panel", "panel.strip": "the front panel status line", tui: "the terminal footer" };
+  var SHOW_MAX = 24;
+
+  function tileValue(t) {
+    return t.status === "unknown" ? UNKNOWN_VALUE : String(has(t.value) ? t.value : UNKNOWN_VALUE);
+  }
+
+  function tileTag(doc, status) {
+    var word = TILE_WORD[status];
+    if (!word) return null;
+    return h(doc, "span.menu-tag.menu-tile-tag", { "data-status": status }, [
+      TILE_ICON[status] ? icon(doc, TILE_ICON[status]) : null, TILE_ICON[status] ? " " : null, word,
+    ]);
+  }
+
+  function profileName(surface) {
+    for (var i = 0; i < PROFILE_NAMES.length; i++) if (PROFILE_NAMES[i][0] === surface) return PROFILE_NAMES[i][1];
+    if (surface === "default") return "Any other screen";
+    return surface;
+  }
+
+  /** Display name of a show-list entry: catalog title, live label, or the id. */
+  function entryTitle(entry, catalog, live) {
+    if (Store.isPattern(entry)) {
+      var fam = entry.slice(0, -2);
+      if (fam === "plugin") return "All plugin tiles";
+      if (fam === "local") return "All local tiles";
+      if (fam === "wlanpi") return "All built-in tiles";
+      return "All tiles under " + fam;
+    }
+    if (catalog[entry] && catalog[entry].title) return String(catalog[entry].title);
+    if (live[entry] && live[entry].label) return String(live[entry].label);
+    return entry;
+  }
+
   // ---------------------------------------------------------------- banner
 
   function renderBanner(el, vm) {
@@ -235,8 +291,22 @@
     var alerts = Array.isArray(vm.alerts) ? vm.alerts.length : 0;
     if (!d || !Object.keys(d).length) return { loading: true, items: [], alerts: alerts, asOf: null, coreDown: false };
     var coreDown = d.core === "unavailable";
+    var tiles = null;
+    var more = 0;
     if (coreDown) {
       if (has(d.ip)) items.push({ k: "ip", text: String(d.ip), primary: true });
+    } else if (Array.isArray(vm.tiles)) {
+      // The webui profile, in order; the hostname stays fixed chrome.
+      if (has(d.hostname)) items.push({ k: "host", text: String(d.hostname), primary: true });
+      tiles = [];
+      for (var i = 0; i < vm.tiles.length && i < BAR_MAX; i++) {
+        var t = vm.tiles[i];
+        tiles.push({
+          k: t.app_id, label: String(t.label || ""), value: tileValue(t), status: t.status,
+          short: t.short && t.status !== "unknown" ? String(t.short) : null, detail: t.detail ? String(t.detail) : null,
+        });
+      }
+      more = vm.tiles.length - tiles.length;
     } else {
       if (has(d.hostname)) items.push({ k: "host", text: String(d.hostname), primary: true });
       if (has(d.mode)) items.push({ k: "mode", text: capitalise(d.mode) });
@@ -246,18 +316,36 @@
       var batt = fmtBattery(d.battery);
       if (batt) items.push({ k: "battery", text: "Battery " + batt });
     }
-    return { loading: false, items: items, alerts: alerts, coreDown: coreDown, asOf: vm.stale && vm.asOf ? fmtTime(vm.asOf) : null };
+    return {
+      loading: false, items: items, tiles: tiles, more: more, alerts: alerts, coreDown: coreDown,
+      asOf: vm.stale && vm.asOf ? fmtTime(vm.asOf) : null,
+    };
+  }
+
+  function barTile(doc, t) {
+    var word = TILE_WORD[t.status];
+    var tip = t.label + " " + t.value + (word ? " (" + word + ")" : "") + (t.detail ? ": " + t.detail : "");
+    return h(doc, "span.menu-sb-item.menu-sb-tile", { "data-field": t.k, "data-status": t.status, title: tip }, [
+      TILE_ICON[t.status] ? icon(doc, TILE_ICON[t.status]) : null,
+      h(doc, "span.menu-sb-label", { text: t.label }), " ",
+      h(doc, "span.menu-sb-value" + (t.short ? ".has-short" : ""), { text: t.value }),
+      // The compact form a phone shows instead (CSS picks one).
+      t.short ? h(doc, "span.menu-sb-short", { "aria-hidden": "true", text: t.short }) : null,
+      word ? h(doc, "span.visually-hidden", { text: " " + word }) : null,
+    ]);
   }
 
   /**
-   * vm: { device, alerts, stale, asOf }. The bar is one link to Home.
-   * Null fields are left out rather than shown as dashes.
+   * vm: { device, alerts, stale, asOf, tiles }. The bar is one link to Home.
+   * Null fields are left out rather than shown as dashes. With `tiles` (the
+   * server has status tiles) the bar draws them in configured order.
    */
   function renderStatusBar(el, vm) {
     var m = statusBarModel(vm || {});
     patch(el, JSON.stringify(m), function () {
       var doc = el.ownerDocument;
       el.classList.toggle("is-core-down", m.coreDown);
+      el.classList.toggle("has-tiles", Boolean(m.tiles));
       if (m.loading) {
         append(el, h(doc, "span.menu-sb-main", { "aria-hidden": "true" }, [
           h(doc, "span.menu-skel.menu-skel-wide"), h(doc, "span.menu-skel"), h(doc, "span.menu-skel.menu-skel-wide"),
@@ -265,7 +353,7 @@
         append(el, h(doc, "span.visually-hidden", { text: "Device status loading" }));
         return;
       }
-      var main = h(doc, "span.menu-sb-main");
+      var main = h(doc, "span.menu-sb-main" + (m.tiles ? ".menu-sb-tiles" : ""));
       if (m.coreDown) {
         append(main, h(doc, "span.menu-sb-item.menu-sb-primary.menu-sb-down", { "data-field": "core" }, [
           icon(doc, "close"), " " + CORE_DOWN,
@@ -277,6 +365,12 @@
           "data-field": it.k, text: it.text,
         }));
       }
+      if (m.tiles) {
+        for (var j = 0; j < m.tiles.length; j++) append(main, barTile(doc, m.tiles[j]));
+        append(main, h(doc, "span.menu-sb-item.menu-sb-more", {
+          "data-field": "more", "data-more": String(m.more), hidden: m.more <= 0,
+        }, [h(doc, "span.menu-sb-more-n", { text: "+" + m.more }), h(doc, "span.visually-hidden", { text: " more on Home" })]));
+      }
       append(el, main);
       var side = h(doc, "span.menu-sb-side");
       if (m.asOf) append(side, h(doc, "span.menu-sb-asof", { text: "(as of " + m.asOf + ")" }));
@@ -287,6 +381,35 @@
       }
       append(el, side);
     });
+  }
+
+  /**
+   * Cut the bar's tiles to what fits on one line: hide tiles from the end
+   * and count them into the +N chip (spec 4.5). Never reorders. Without
+   * layout (no widths) nothing is cut.
+   */
+  function fitStatusBar(el) {
+    var main = el && el.querySelector(".menu-sb-tiles");
+    if (!main) return;
+    var tiles = main.querySelectorAll(".menu-sb-tile");
+    var more = main.querySelector(".menu-sb-more");
+    var base = more ? parseInt(more.getAttribute("data-more"), 10) || 0 : 0;
+    var i;
+    for (i = 0; i < tiles.length; i++) tiles[i].hidden = false;
+    var cut = 0;
+    var setMore = function () {
+      if (!more) return;
+      var n = base + cut;
+      more.hidden = n <= 0;
+      more.querySelector(".menu-sb-more-n").textContent = "+" + n;
+    };
+    setMore();
+    if (!main.clientWidth) return;
+    for (i = tiles.length - 1; i >= 0 && main.scrollWidth > main.clientWidth; i--) {
+      tiles[i].hidden = true;
+      cut += 1;
+      setMore();
+    }
   }
 
   // ---------------------------------------------------------------- rows and trees
@@ -543,12 +666,43 @@
     return dl;
   }
 
+  function tileCard(doc, tiles) {
+    var card = h(doc, "section.uk-card.uk-card-default.uk-card-body.uk-card-small.menu-tiles", {
+      "aria-labelledby": "menu-tiles-title",
+    }, [
+      h(doc, "div.menu-tiles-head", null, [
+        h(doc, "h3.menu-card-title", { id: "menu-tiles-title", text: "Status tiles" }),
+        h(doc, "a.uk-button.uk-button-link.menu-tiles-customize", {
+          href: Router.hrefFor(Router.TILES_ID), "data-focus-key": "tiles-customize", text: "Customize",
+        }),
+      ]),
+    ]);
+    if (!tiles.length) {
+      append(card, h(doc, "p.menu-muted", { text: "No tiles are reporting for this screen." }));
+      return card;
+    }
+    var dl = h(doc, "dl.menu-tile-grid");
+    for (var i = 0; i < tiles.length; i++) {
+      var t = tiles[i];
+      append(dl, h(doc, "div.menu-tile", { "data-status": t.status, "data-tile": t.app_id }, [
+        h(doc, "dt", { text: String(t.label || t.app_id) }),
+        h(doc, "dd", null, [
+          h(doc, "span.menu-tile-value", { text: tileValue(t) }), tileTag(doc, t.status),
+          t.detail ? h(doc, "span.menu-tile-detail", { text: String(t.detail) }) : null,
+        ]),
+      ]));
+    }
+    append(card, dl);
+    return card;
+  }
+
   function renderHome(el, vm) {
     var doc = el.ownerDocument;
     var state = vm.state;
     var d = Store.topic(state, "device.summary") || {};
     var alerts = Store.topic(state, "alerts") || [];
     var comps = Store.topic(state, "complications") || [];
+    var tiles = Store.tilesFor(state, SURFACE);
     var coreDown = d.core === "unavailable";
 
     if (el.__menuPage !== "home") {
@@ -571,7 +725,7 @@
     if (input && input.value !== vm.ui.filter && doc.activeElement !== input) input.value = vm.ui.filter || "";
 
     var deviceEl = el.querySelector('[data-region="device"]');
-    patch(deviceEl, JSON.stringify([d, alerts, comps, vm.ui.deviceExpanded]), function () {
+    patch(deviceEl, JSON.stringify([d, alerts, tiles || comps, Boolean(tiles), vm.ui.deviceExpanded]), function () {
       if (coreDown) {
         append(deviceEl, h(doc, "div.uk-alert.uk-alert-danger.menu-core-down", { role: "alert" }, [
           icon(doc, "close"), " ", h(doc, "strong", { text: "Error" }), " ",
@@ -580,7 +734,11 @@
       }
       append(deviceEl, deviceCard(doc, coreDown ? { ip: d.ip } : d, vm.ui.deviceExpanded));
       if (alerts.length) append(deviceEl, alertList(doc, alerts));
-      if (comps.length) append(deviceEl, complicationList(doc, comps));
+      if (tiles) {
+        if (!coreDown) append(deviceEl, tileCard(doc, tiles));
+      } else if (comps.length) {
+        append(deviceEl, complicationList(doc, comps));
+      }
     });
 
     var sectionsEl = el.querySelector('[data-region="sections"]');
@@ -611,6 +769,237 @@
       }
       append(sectionsEl, grid);
     });
+  }
+
+  // ---------------------------------------------------------------- status tiles customize page (spec 4.7)
+
+  /**
+   * The show list each profile's screen gets, edited in place. Every change
+   * is one complications.configure sent by main.js; this page draws only from
+   * the complications.config event, never from its own optimistic state.
+   * vm.ui.tilesSurface: the profile being edited.
+   */
+  function tilesModel(vm) {
+    var state = vm.state;
+    var surface = vm.ui.tilesSurface || SURFACE;
+    var cfg = Store.topic(state, "complications.config");
+    var prof = cfg && cfg.surfaces ? cfg.surfaces[surface] || null : null;
+    var catalogList = Store.topic(state, "complications.catalog") || [];
+    var catalog = {};
+    for (var i = 0; i < catalogList.length; i++) if (catalogList[i] && catalogList[i].app_id) catalog[catalogList[i].app_id] = catalogList[i];
+    var live = Store.liveTiles(state);
+    var show = prof && Array.isArray(prof.show) ? prof.show : [];
+    var counts = [];
+    Store.resolveTiles(show, Object.keys(live), counts);
+    var fits = Object.prototype.hasOwnProperty.call(PROFILE_FITS, surface) ? PROFILE_FITS[surface] : null;
+
+    var shown = [];
+    var total = 0;
+    var fitAfter = -1;
+    for (var k = 0; k < show.length; k++) {
+      var e = show[k];
+      var pattern = Store.isPattern(e);
+      var row = { entry: e, title: entryTitle(e, catalog, live), pattern: pattern };
+      if (pattern) {
+        row.note = counts[k] ? plural(counts[k], "tile", "tiles") + " reporting" : "none reporting";
+      } else if (live[e]) {
+        var t = assign1(live[e]);
+        row.value = tileValue(t);
+        row.status = t.status;
+      } else {
+        row.note = "not reporting";
+      }
+      total += counts[k] || 0;
+      if (fits !== null && fitAfter === -1 && total >= fits && k < show.length - 1) fitAfter = k;
+      shown.push(row);
+    }
+    var inShow = {};
+    for (var s2 = 0; s2 < show.length; s2++) inShow[show[s2]] = true;
+    var available = [];
+    var ids = Object.keys(catalog);
+    for (var lid in live) if (!catalog[lid]) ids.push(lid);
+    ids.sort();
+    for (var a = 0; a < ids.length; a++) {
+      var id = ids[a];
+      if (inShow[id]) continue;
+      var c = catalog[id] || {};
+      var lt = live[id] ? assign1(live[id]) : null;
+      var covered = null;
+      for (var q = 0; q < show.length && !covered; q++) {
+        if (Store.isPattern(show[q]) && id.indexOf(show[q].slice(0, -1)) === 0) covered = "shown by " + entryTitle(show[q], catalog, live);
+      }
+      available.push({
+        entry: id, title: entryTitle(id, catalog, live), description: c.description ? String(c.description) : null,
+        value: lt ? tileValue(lt) : null, status: lt ? lt.status : null, note: lt ? null : "not reporting", covered: covered,
+      });
+    }
+    var families = ["plugin.*", "local.*"];
+    for (var f = 0; f < families.length; f++) {
+      if (!inShow[families[f]]) available.push({ entry: families[f], title: entryTitle(families[f], catalog, live), pattern: true });
+    }
+    var surfaces = [];
+    for (var p = 0; p < PROFILE_NAMES.length; p++) surfaces.push(PROFILE_NAMES[p][0]);
+    if (cfg && cfg.surfaces) {
+      var extra = Object.keys(cfg.surfaces).sort();
+      for (var x = 0; x < extra.length; x++) if (surfaces.indexOf(extra[x]) === -1) surfaces.push(extra[x]);
+    }
+    return {
+      supported: Store.hasTiles(state), ready: Boolean(prof), surface: surface, surfaces: surfaces,
+      source: prof ? prof.source : null, shown: shown, available: available, fitAfter: fitAfter, fits: fits,
+      full: show.length >= SHOW_MAX, editable: Store.canConfigure(state) && vm.connected,
+      allowed: Store.canConfigure(state), busy: Store.configuring(state, surface),
+      error: state.tilesError ? errorCopy(state.tilesError) : null,
+    };
+  }
+
+  function assign1(c) {
+    var out = {};
+    for (var k in c) if (Object.prototype.hasOwnProperty.call(c, k)) out[k] = c[k];
+    out.status = Store.tileStatus(c.status);
+    return out;
+  }
+
+  var SOURCE_COPY = {
+    "default": "Using the default list.",
+    site: "Using the list set for this site.",
+    user: "Customized on this device.",
+  };
+
+  /**
+   * `disabled`: the account or connection cannot edit. `inert`: this button
+   * does nothing right now (top row's Up, a save in flight); it stays
+   * focusable (aria-disabled) so keyboard focus survives the redraw.
+   */
+  function tileButton(doc, action, entry, label, text, disabled, inert) {
+    return h(doc, "button.uk-button.uk-button-default.uk-button-small.menu-ctl", {
+      type: "button", "data-menu-action": action, "data-entry": entry, "aria-label": label,
+      "data-focus-key": action + ":" + entry, disabled: disabled, "aria-disabled": inert && !disabled ? "true" : null, text: text,
+    });
+  }
+
+  function renderTiles(el, vm) {
+    var doc = el.ownerDocument;
+    var m = tilesModel(vm);
+    if (el.__menuPage !== "tiles") {
+      el.__menuPage = "tiles";
+      el.__menuKey = null;
+    }
+    patch(el, JSON.stringify(["tiles", m]), function () {
+      append(el, [
+        h(doc, "nav.menu-crumbs", { "aria-label": "Breadcrumb" }, h(doc, "ul.uk-breadcrumb.menu-crumbs-full.menu-crumbs-always", null,
+          h(doc, "li", null, h(doc, "a", { href: Router.hrefFor(""), text: "Menu" })))),
+        pageTitle(doc, "Customize status tiles"),
+      ]);
+      if (!m.supported) {
+        append(el, h(doc, "p", { text: "The device's menu service does not offer status tiles yet." }));
+        return;
+      }
+      append(el, h(doc, "p.menu-muted", {
+        text: "Choose which tiles each screen shows and in what order. Each change applies at once; a screen shows as many as fit, from the top.",
+      }));
+      var picker = h(doc, "div.menu-tiles-picker", null, [
+        h(doc, "label.uk-form-label", { "for": "menu-tiles-surface", text: "Editing" }),
+        h(doc, "select.uk-select.uk-form-small.menu-ctl", {
+          id: "menu-tiles-surface", "data-menu-tiles-surface": "", "data-focus-key": "tiles-surface",
+        }, m.surfaces.map(function (sname) {
+          return h(doc, "option", { value: sname, selected: sname === m.surface, text: profileName(sname) });
+        })),
+      ]);
+      append(el, picker);
+      if (!m.ready) {
+        append(el, h(doc, "p.menu-muted", { role: "status", text: "Loading the tile layout…" }));
+        return;
+      }
+      append(el, h(doc, "p.menu-tiles-source", { "data-source": String(m.source || "") }, [
+        SOURCE_COPY[m.source] || "", m.busy ? h(doc, "span.menu-tiles-busy", { text: " Saving…" }) : null,
+      ]));
+      if (!m.allowed) append(el, h(doc, "p.menu-muted", { text: "Your account can view these tiles but not change them." }));
+      if (m.error) {
+        append(el, h(doc, "div.uk-alert.uk-alert-danger.menu-tiles-error", { role: "alert" }, [
+          icon(doc, "close"), " ", m.error.text, m.error.detail ? " " + m.error.detail : "",
+        ]));
+      }
+      var off = !m.editable;
+      var busy = m.busy;
+
+      var shownSec = h(doc, "section.menu-tiles-shown", { "aria-labelledby": "menu-tiles-shown-title" },
+        h(doc, "h3.menu-card-title", { id: "menu-tiles-shown-title", text: "Shown" }));
+      if (!m.shown.length) {
+        append(shownSec, h(doc, "p.menu-muted", { text: "Nothing is shown on this screen." }));
+      } else {
+        var ol = h(doc, "ol.menu-tiles-list");
+        for (var i = 0; i < m.shown.length; i++) {
+          var r = m.shown[i];
+          append(ol, h(doc, "li.menu-tiles-row" + (m.fitAfter !== -1 && i > m.fitAfter ? ".is-over" : ""), {
+            "data-entry": r.entry, "data-status": r.status || null,
+          }, [
+            h(doc, "span.menu-tiles-name", { text: r.title }),
+            h(doc, "span.menu-tiles-value", null, r.value
+              ? [r.value, tileTag(doc, r.status)]
+              : h(doc, "span.menu-muted", { text: r.note })),
+            m.fitAfter !== -1 && i > m.fitAfter ? h(doc, "span.visually-hidden", { text: " (does not fit)" }) : null,
+            h(doc, "span.menu-tiles-actions", null, [
+              tileButton(doc, "tile-up", r.entry, "Move " + r.title + " up", "Up", off, busy || i === 0),
+              tileButton(doc, "tile-down", r.entry, "Move " + r.title + " down", "Down", off, busy || i === m.shown.length - 1),
+              tileButton(doc, "tile-remove", r.entry, "Remove " + r.title, "Remove", off, busy),
+            ]),
+          ]));
+          if (i === m.fitAfter) {
+            append(ol, h(doc, "li.menu-tiles-fit", { "aria-hidden": "true", text: "Fits on " + PROFILE_FITS_WHERE[m.surface] + " above" }));
+          }
+        }
+        append(shownSec, ol);
+      }
+
+      var availSec = h(doc, "section.menu-tiles-available", { "aria-labelledby": "menu-tiles-available-title" },
+        h(doc, "h3.menu-card-title", { id: "menu-tiles-available-title", text: "Available" }));
+      if (!m.available.length) {
+        append(availSec, h(doc, "p.menu-muted", { text: "Every tile is shown." }));
+      } else {
+        var ul = h(doc, "ul.menu-tiles-list");
+        for (var j = 0; j < m.available.length; j++) {
+          var av = m.available[j];
+          append(ul, h(doc, "li.menu-tiles-row", { "data-entry": av.entry, "data-status": av.status || null }, [
+            h(doc, "span.menu-tiles-name", { text: av.title }),
+            h(doc, "span.menu-tiles-value", null, av.pattern ? null : av.value
+              ? [av.value, tileTag(doc, av.status)]
+              : h(doc, "span.menu-muted", { text: av.note })),
+            av.description || av.covered ? h(doc, "span.menu-tiles-desc", {
+              text: [av.description, av.covered ? "(" + av.covered + ")" : null].filter(Boolean).join(" "),
+            }) : null,
+            h(doc, "span.menu-tiles-actions", null,
+              tileButton(doc, "tile-add", av.entry, "Add " + av.title, "Add", off, busy || m.full)),
+          ]));
+        }
+        append(availSec, ul);
+      }
+      append(el, h(doc, "div.menu-tiles-columns", null, [shownSec, availSec]));
+      append(el, h(doc, "p", null, h(doc, "button.uk-button.uk-button-default.menu-ctl", {
+        type: "button", "data-menu-action": "tiles-reset", "data-focus-key": "tiles-reset",
+        disabled: off, "aria-disabled": !off && (busy || m.source === "default") ? "true" : null, text: "Reset to default",
+      })));
+    });
+  }
+
+  /** The show list after one edit, or null when the edit changes nothing. */
+  function editedShow(show, action, entry) {
+    var list = Array.isArray(show) ? show.slice() : [];
+    var i = list.indexOf(entry);
+    if (action === "tile-add") {
+      if (i !== -1 || list.length >= SHOW_MAX) return null;
+      list.push(entry);
+    } else if (action === "tile-remove") {
+      if (i === -1) return null;
+      list.splice(i, 1);
+    } else if (action === "tile-up" || action === "tile-down") {
+      var j = action === "tile-up" ? i - 1 : i + 1;
+      if (i === -1 || j < 0 || j >= list.length) return null;
+      list[i] = list[j];
+      list[j] = entry;
+    } else {
+      return null;
+    }
+    return list;
   }
 
   // ---------------------------------------------------------------- branch, not available, loading
@@ -995,6 +1384,7 @@
       case TYPE.HOME: renderHome(el, vm); break;
       case TYPE.BRANCH: renderBranch(el, vm); break;
       case TYPE.ACTION: renderAction(el, vm); break;
+      case TYPE.TILES: renderTiles(el, vm); break;
       default: renderNotAvailable(el); break;
     }
     if (el.querySelector("#menu-page-title")) {
@@ -1096,6 +1486,12 @@
     patch: patch,
     renderBanner: renderBanner,
     renderStatusBar: renderStatusBar,
+    fitStatusBar: fitStatusBar,
+    editedShow: editedShow,
+    tilesModel: tilesModel,
+    SURFACE: SURFACE,
+    BAR_MAX: BAR_MAX,
+    TILE_WORD: TILE_WORD,
     renderSidebar: renderSidebar,
     renderPage: renderPage,
     renderNotices: renderNotices,

@@ -93,7 +93,10 @@
 
     var state = Store.createState();
     var connState = { phase: "idle", reason: null, retryInSec: null, attempt: 0, paused: false };
-    var ui = { filter: "", confirming: null, deviceExpanded: false, activityOpen: false, notices: [], noticeSeq: 0 };
+    var ui = {
+      filter: "", confirming: null, deviceExpanded: false, activityOpen: false, notices: [], noticeSeq: 0,
+      tilesSurface: Pages.SURFACE,
+    };
     var route = { type: TYPE.LOADING, id: "", node: null };
     var routeKey = null;
     var arrival = false; // the current page has not had its on-arrival run yet
@@ -207,7 +210,26 @@
     }
 
     function subscribe() {
-      conn.send({ type: "subscribe", topics: TOPICS });
+      // The tile topics only when the server says it has them: an older
+      // service answers an unknown topic with a null snapshot, not an error.
+      conn.send({ type: "subscribe", topics: Store.hasTiles(state) ? TOPICS.concat(Store.TILE_TOPICS) : TOPICS });
+    }
+
+    /** One edit on the customize page: a complications.configure for the profile being edited. */
+    function configureTiles(action, entry) {
+      if (!connected() || !Store.canConfigure(state) || Store.configuring(state)) return;
+      var surface = ui.tilesSurface;
+      var fields = { type: "complications.configure", surface: surface };
+      if (action === "tiles-reset") {
+        fields.reset = true;
+      } else {
+        var prof = Store.tileProfile(state, surface);
+        var next = Pages.editedShow(prof ? prof.show : [], action, entry);
+        if (!next) return;
+        fields.show = next;
+      }
+      var id = conn.send(fields);
+      if (id !== null) state = Store.trackRequest(state, { id: id, kind: "configure", surface: surface });
     }
 
     /** The on-arrival run: only for read-only actions without parameters or confirmation. */
@@ -391,7 +413,9 @@
         alerts: Store.topic(state, "alerts"),
         stale: !live && Boolean(state.menu),
         asOf: device ? device.at : null,
+        tiles: Store.tilesFor(state, Pages.SURFACE),
       });
+      Pages.fitStatusBar(els.statusbar);
       var items = activityItems();
       if (!items.length) ui.activityOpen = false;
       Activity.render(els.activity, { items: items, open: ui.activityOpen, connected: live });
@@ -475,6 +499,14 @@
         case "panel-toggle":
           frontPanel.toggle();
           break;
+        case "tile-up":
+        case "tile-down":
+        case "tile-remove":
+        case "tile-add":
+        case "tiles-reset":
+          if (el.getAttribute("aria-disabled") === "true") return;
+          configureTiles(action, el.getAttribute("data-entry"));
+          break;
         default:
           return;
       }
@@ -495,6 +527,12 @@
 
     function onInput(evt) {
       var t = evt.target;
+      if (t && t.hasAttribute && t.hasAttribute("data-menu-tiles-surface")) {
+        if (ui.tilesSurface === t.value) return;
+        ui.tilesSurface = t.value;
+        render();
+        return;
+      }
       if (!t || !t.hasAttribute || !t.hasAttribute("data-menu-filter")) return;
       ui.filter = t.value;
       render();
@@ -529,7 +567,9 @@
       if (resizeTimer !== null) win.clearTimeout(resizeTimer);
       resizeTimer = win.setTimeout(function () {
         resizeTimer = null;
-        if (!destroyed) Pages.fitTables(els.page);
+        if (destroyed) return;
+        Pages.fitTables(els.page);
+        Pages.fitStatusBar(els.statusbar);
       }, 100);
     }
 
@@ -539,6 +579,7 @@
     panel.addEventListener("click", onClick);
     panel.addEventListener("submit", onSubmit);
     panel.addEventListener("input", onInput);
+    panel.addEventListener("change", onInput);
     doc.addEventListener("keydown", onKeydown);
     win.addEventListener("resize", onResize);
 
@@ -564,6 +605,7 @@
       panel.removeEventListener("click", onClick);
       panel.removeEventListener("submit", onSubmit);
       panel.removeEventListener("input", onInput);
+      panel.removeEventListener("change", onInput);
       doc.removeEventListener("keydown", onKeydown);
       win.removeEventListener("resize", onResize);
       if (resizeTimer !== null) win.clearTimeout(resizeTimer);

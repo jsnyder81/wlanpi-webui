@@ -26,7 +26,11 @@ export type WlanpiMenudWebSocketFrameProtocolV1 =
   | Prompt
   | Job
   | Event
-  | Error;
+  | Error
+  | ComplicationPublish
+  | ComplicationRemove
+  | ComplicationsConfigure
+  | ComplicationAck;
 /**
  * C to S. Must be the first frame on proxy.sock when nginx did not attach WebUI session headers, and must arrive within 10 s. Never sent on local.sock (kernel peer credentials are used) or by pre-authenticated WebUI sessions. ?token= in the URL is refused. Success: the server sends welcome after hello. Failure: error AUTH_FAILED, then close 4401.
  */
@@ -99,6 +103,14 @@ export type Hello = Envelope & {
     };
     menu_revision?: number;
   };
+  /**
+   * Additive (complications.2). Display profile an independent thin session's home view uses. Omitted: derived from client.name (wlanpi-fpms: panel, wlanpi-menu-tui: tui, wlanpi-webui: webui), else default. The default session always uses panel and panel.strip.
+   */
+  surface?: string;
+  /**
+   * Additive (complications.2). true: the independent session is dropped at disconnect with no resume grace (one-shot providers and CLIs). Refused BAD_REQUEST (close 4400) with session default.
+   */
+  ephemeral?: boolean;
 };
 export type BlockType = "text" | "kv" | "table" | "list" | "qr" | "status" | "progress" | "confirm";
 export type Key = "up" | "down" | "left" | "right" | "center" | "key1" | "key2" | "key3";
@@ -264,6 +276,10 @@ export type Welcome = Envelope & {
     queue_frames?: number;
     max_frame_bytes?: number;
   };
+  /**
+   * Additive. Optional protocol features this server supports. complications.2: the complication.* and complications.configure frames and the complications.live, complications.catalog and complications.config topics. A client uses them only when it sees the name here.
+   */
+  features?: string[];
 };
 export type Role = "viewer" | "operator" | "admin" | "provider";
 /**
@@ -456,6 +472,113 @@ export type Error = Envelope & {
   core_status?: number;
   retry_after_sec?: number;
 };
+/**
+ * C to S, additive (complications.2). Create or replace the live record for app_id. Only on local.sock, only for principals with role provider or admin, only inside the caller's namespace (see complication_id). A publish replaces the whole record: omitted optional fields return to their defaults. Every publish restarts the TTL. Replied to with complication.ack (state live) or error: FORBIDDEN (wrong socket, role, namespace, wlanpi.*, quota), BAD_REQUEST (schema, undeclared plugin id, label missing on a local.* id). Never publish secrets: every subscriber, viewers included, sees complications.
+ */
+export type ComplicationPublish = Envelope & {
+  v: unknown;
+  id: unknown;
+  type: "complication.publish";
+  app_id: ComplicationId;
+  /**
+   * The reading.
+   */
+  value: string;
+  /**
+   * Short name. Required for local.* ids; a declared id defaults to its declared label.
+   */
+  label?: string;
+  /**
+   * Compact form for strips (85%, -52, ON). Without it a strip shows the first 4 characters of value.
+   */
+  short?: string;
+  /**
+   * Default unknown. warning is a deprecated alias stored as warn.
+   */
+  status?: ComplicationStatus | "warning";
+  /**
+   * Longer text for surfaces with room.
+   */
+  detail?: string;
+  icon?: ComplicationIcon;
+  /**
+   * Lifetime from this publish. Default 30. Not clamped: out of range fails the schema.
+   */
+  ttl_sec?: number;
+  /**
+   * ttl (default): the record lives until its TTL. connection: it is also removed when this connection closes.
+   */
+  hold?: "ttl" | "connection";
+};
+/**
+ * Additive (complications.2). A complication's identity. wlanpi.* is built in and published only by the service; plugin.<name>.* is declared in plugins.d/<name>/complications.json and published by the unix user that declaration names; local.<user>.* is ad hoc and bound to the caller's own unix username (SO_PEERCRED).
+ */
+export type ComplicationId = string;
+/**
+ * Additive (complications.2). Closed status vocabulary. ok: working as intended. info: a neutral fact. warn: degraded. error: broken. off: deliberately disabled or idle. unknown: no reading yet. A surface draws an unrecognized status as unknown.
+ */
+export type ComplicationStatus = "ok" | "info" | "warn" | "error" | "off" | "unknown";
+/**
+ * Additive (complications.2). A named glyph each surface maps to its own; a surface without that glyph draws none. Adding a name is additive.
+ */
+export type ComplicationIcon =
+  | "battery"
+  | "bolt"
+  | "bluetooth"
+  | "globe"
+  | "wifi"
+  | "ethernet"
+  | "thermometer"
+  | "cpu"
+  | "users"
+  | "radio"
+  | "shield"
+  | "dot";
+/**
+ * C to S, additive (complications.2). Remove a live record. Same socket, role and namespace rules as complication.publish. Replied to with complication.ack (state removed), or error NOT_FOUND when the id is not live.
+ */
+export type ComplicationRemove = Envelope & {
+  v: unknown;
+  id: unknown;
+  type: "complication.remove";
+  app_id: ComplicationId;
+};
+/**
+ * C to S, additive (complications.2). Set (show) or reset a surface profile's ordered list of complication ids and families. Role operator or admin, on either socket. Ids not in the catalog are accepted. The reply is an event on complications.config carrying the request id and snapshot=true, sent whether or not the caller is subscribed.
+ */
+export type ComplicationsConfigure = Envelope & {
+  v: unknown;
+  id: unknown;
+  type: "complications.configure";
+  surface: SurfaceProfile;
+  /**
+   * @maxItems 24
+   */
+  show?: (ComplicationId | ComplicationPattern)[];
+  reset?: true;
+} & ComplicationsConfigure1;
+/**
+ * Additive (complications.2). A display profile name: panel, panel.strip, tui, webui, default, or a new surface's own name.
+ */
+export type SurfaceProfile = string;
+/**
+ * Additive (complications.2). A family of complication ids, ending in .*: wlanpi.*, plugin.*, plugin.acme.*, local.*. The same wildcard rule as topic subscriptions.
+ */
+export type ComplicationPattern = string;
+export type ComplicationsConfigure1 = {
+  [k: string]: unknown;
+};
+/**
+ * S to C, additive (complications.2). Reply to complication.publish (state live, with the TTL now running) or complication.remove (state removed).
+ */
+export type ComplicationAck = Envelope & {
+  v: unknown;
+  id: unknown;
+  type: "complication.ack";
+  app_id: ComplicationId;
+  state: "live" | "removed";
+  ttl_sec?: number;
+};
 
 export interface Envelope {
   v: 1;
@@ -582,6 +705,10 @@ export interface BlockKv {
      * Surfaces may mask until revealed.
      */
     secret?: boolean;
+    /**
+     * Additive (complications.2). Status of the row; a renderer that ignores it shows the row uncoloured.
+     */
+    level?: "ok" | "info" | "warn" | "error";
   }[];
 }
 export interface BlockTable {

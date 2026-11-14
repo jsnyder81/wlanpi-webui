@@ -134,6 +134,59 @@
     margin: 0 var(--space-2);
 }
 
+/* Status tiles in the bar (complications, webui profile): one line, cut
+   from the end into the +N chip by fitStatusBar(). */
+.menu-statusbar.has-tiles .menu-sb-main {
+    flex: 1 1 auto;
+}
+
+.menu-sb-tiles {
+    flex-wrap: nowrap;
+    overflow: hidden;
+}
+
+.menu-sb-item[hidden] {
+    display: none;
+}
+
+.menu-sb-tile {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+}
+
+.menu-sb-label {
+    color: var(--text-muted);
+}
+
+.menu-sb-tile[data-status="ok"] .menu-icon {
+    color: var(--success-fg);
+}
+
+.menu-sb-tile[data-status="warn"] .menu-icon,
+.menu-sb-tile[data-status="warn"] .menu-sb-value {
+    color: var(--warn-fg);
+}
+
+.menu-sb-tile[data-status="error"] .menu-icon,
+.menu-sb-tile[data-status="error"] .menu-sb-value {
+    color: var(--danger-fg);
+    font-weight: 600;
+}
+
+.menu-sb-tile[data-status="off"] .menu-sb-value,
+.menu-sb-tile[data-status="unknown"] .menu-sb-value {
+    color: var(--text-muted);
+}
+
+.menu-sb-more {
+    font-weight: 600;
+}
+
+.menu-sb-short {
+    display: none;
+}
+
 .menu-sb-asof {
     color: var(--text-muted);
 }
@@ -583,6 +636,132 @@
 
 .menu-complication dd {
     margin: 0;
+}
+
+/* ---- Status tiles (Home card and customize page) ------------------------- */
+
+.menu-tiles {
+    margin: 0 0 var(--space-4);
+}
+
+.menu-tiles-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-3);
+}
+
+.menu-tile-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: var(--space-3);
+    margin: 0;
+}
+
+.menu-tile dt {
+    color: var(--text-muted);
+    font-weight: 400;
+    text-transform: none;
+}
+
+.menu-tile dd {
+    margin: 0;
+}
+
+.menu-tile[data-status="off"] .menu-tile-value,
+.menu-tile[data-status="unknown"] .menu-tile-value {
+    color: var(--text-muted);
+}
+
+.menu-tile-detail,
+.menu-tiles-desc {
+    display: block;
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+}
+
+.menu-tile-tag[data-status="ok"] {
+    background: var(--success-bg);
+    color: var(--success-fg);
+    border-color: var(--success-fg);
+}
+
+.menu-tile-tag[data-status="warn"] {
+    background: var(--warn-bg);
+    color: var(--warn-fg);
+    border-color: var(--warn-fg);
+}
+
+.menu-tile-tag[data-status="error"] {
+    background: var(--danger-bg);
+    color: var(--danger-fg);
+    border-color: var(--danger-fg);
+}
+
+.menu-tile-tag[data-status="off"],
+.menu-tile-tag[data-status="unknown"] {
+    border-style: dashed;
+}
+
+.menu-tiles-picker {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin: 0 0 var(--space-3);
+    max-width: 420px;
+}
+
+.menu-tiles-source {
+    color: var(--text-muted);
+}
+
+.menu-tiles-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
+    gap: var(--space-5);
+    margin: 0 0 var(--space-4);
+}
+
+.menu-tiles-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    border-top: 1px solid var(--border);
+}
+
+.menu-tiles-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--space-1) var(--space-3);
+    padding: var(--space-2) 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.menu-tiles-row .menu-tiles-desc {
+    grid-column: 1 / -1;
+}
+
+.menu-tiles-row.is-over .menu-tiles-name {
+    color: var(--text-muted);
+}
+
+.menu-tiles-actions {
+    display: inline-flex;
+    gap: var(--space-1);
+}
+
+.menu-tiles-fit {
+    padding: var(--space-1) 0;
+    border-bottom: 1px dashed var(--text-muted);
+    color: var(--text-muted);
+    font-size: var(--fs-xs);
+    text-align: center;
+}
+
+.menu-panel .menu-ctl[aria-disabled="true"] {
+    opacity: 0.55;
+    cursor: default;
 }
 
 .menu-cards {
@@ -1263,6 +1442,10 @@
         display: none;
     }
 
+    .menu-tiles-columns {
+        grid-template-columns: minmax(0, 1fr);
+    }
+
     .menu-home-filter {
         display: block;
     }
@@ -1308,6 +1491,31 @@
 
 /* < 640 px: the breadcrumb collapses to a Back link to the parent. */
 @media (max-width: 639px) {
+    /* Phone: the compact form of a tile, and no dot separators. */
+    .menu-sb-tile .menu-sb-value.has-short {
+        display: none;
+    }
+
+    .menu-sb-tile .menu-sb-short {
+        display: inline;
+    }
+
+    .menu-sb-tiles {
+        gap: var(--space-2);
+    }
+
+    .menu-statusbar.has-tiles .menu-sb-item + .menu-sb-item::before {
+        content: none;
+    }
+
+    .menu-tiles-row {
+        grid-template-columns: minmax(0, 1fr) auto;
+    }
+
+    .menu-tiles-row .menu-tiles-actions {
+        grid-column: 1 / -1;
+    }
+
     .menu-crumbs-full:not(.menu-crumbs-always) {
         display: none;
     }

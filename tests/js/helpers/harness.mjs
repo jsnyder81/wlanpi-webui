@@ -32,19 +32,19 @@ function validatorFor(type) {
   return validators[type];
 }
 
-const C2S = ["hello", "subscribe", "unsubscribe", "input", "invoke", "answer", "page", "cancel"];
+const C2S = ["hello", "subscribe", "unsubscribe", "input", "invoke", "answer", "page", "cancel", "complications.configure"];
 
 /** A frame the browser sends must be a valid client-to-server frame. */
 export function assertC2S(frame) {
   assert.ok(frame && typeof frame === "object", "frame is an object");
   assert.ok(C2S.includes(frame.type), `client sent a ${frame.type} frame, which the browser must not send`);
-  const v = validatorFor(frame.type);
+  const v = validatorFor(frame.type.replace(/\./g, "_"));
   assert.ok(v(frame), `${frame.type} frame breaks frames.schema.json: ${JSON.stringify(v.errors)}\n${JSON.stringify(frame)}`);
 }
 
 /** Fixtures the tests feed in must be valid server-to-client frames too. */
 export function assertS2C(frame) {
-  const v = validatorFor(frame.type);
+  const v = validatorFor(frame.type.replace(/\./g, "_"));
   assert.ok(v(frame), `${frame.type} fixture breaks frames.schema.json: ${JSON.stringify(v.errors)}\n${JSON.stringify(frame)}`);
   return frame;
 }

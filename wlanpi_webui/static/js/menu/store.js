@@ -39,6 +39,7 @@
       prompt: null, // the open prompt frame (+ receivedAt)
       promptQueue: [],
       promptError: null,
+      tilesError: null, // the last refused complications.configure: { code, message }
     };
   }
 
@@ -282,6 +283,7 @@
       next.prompt = null;
       next.promptQueue = [];
       next.promptError = null;
+      next.tilesError = null;
       var topics = {};
       for (var t in state.topics) topics[t] = assign({}, state.topics[t], { stale: true });
       next.topics = topics;
@@ -302,6 +304,11 @@
     var stale = frame.snapshot ? false : Boolean(gap || (prev && prev.stale));
     next.topics = assign({}, state.topics);
     next.topics[frame.topic] = { data: frame.data, seq: frame.seq, stale: stale, at: now };
+    var pend = typeof frame.id === "string" ? state.pending[frame.id] : null;
+    if (pend && pend.kind === "configure") {
+      next.pending = without(state.pending, frame.id);
+      next.tilesError = null;
+    }
     return next;
   }
 
@@ -416,6 +423,8 @@
     } else if (pend.kind === "page") {
       var entry = next.results[pend.node];
       if (entry) touchResult(next, pend.node, assign({}, entry, { pageError: err, paging: false }));
+    } else if (pend.kind === "configure") {
+      next.tilesError = err;
     } else if (pend.kind === "answer") {
       // The dialog closed when the answer was sent. NOT_FOUND means the prompt
       // was answered or expired elsewhere; any other refusal leaves the prompt
@@ -452,14 +461,16 @@
    *   { id, kind: "page", node, jobId }
    *   { id, kind: "cancel", node, jobId }
    *   { id, kind: "answer", promptId, prompt }   prompt: the frame being answered
+   *   { id, kind: "configure", surface }      a complications.configure
    */
   function trackRequest(state, req) {
     var next = clone(state);
     next.pending = assign({}, state.pending);
     next.pending[req.id] = {
       kind: req.kind, node: req.node || null, jobId: req.jobId || null, promptId: req.promptId || null,
-      prompt: req.prompt || null,
+      prompt: req.prompt || null, surface: req.surface || null,
     };
+    if (req.kind === "configure") next.tilesError = null;
     if (req.kind === "answer") {
       // An accepted answer has no reply of its own, so nothing ever clears
       // it: keep only the few most recent to route a refusal.
@@ -525,8 +536,140 @@
     return out;
   }
 
+
+  // ---------------------------------------------------------------- complications (status tiles)
+
+  var TILES_FEATURE = "complications.2";
+  var TILE_TOPICS = ["complications.live", "complications.catalog", "complications.config"];
+  var TILE_STATUSES = ["ok", "info", "warn", "error", "off", "unknown"];
+
+  /** The server sent `complications.2` in welcome.features: the new frames and topics exist. */
+  function hasTiles(state) {
+    var f = state.welcome && state.welcome.features;
+    return Array.isArray(f) && f.indexOf(TILES_FEATURE) !== -1;
+  }
+
+  /** An unrecognized status is drawn as unknown (spec 2.6). */
+  function tileStatus(s) {
+    return TILE_STATUSES.indexOf(s) !== -1 ? s : "unknown";
+  }
+
+  function isPattern(entry) {
+    return typeof entry === "string" && entry.slice(-2) === ".*";
+  }
+
+  function byString(a, b) {
+    return a < b ? -1 : a > b ? 1 : 0;
+  }
+
+  /**
+   * Spec 4.3 resolution: walk `show` in order; an exact id yields itself when
+   * live; a pattern yields every live id it matches that no exact entry names
+   * and nothing earlier yielded, sorted by id. Returns ids; the caller cuts.
+   * `perEntry`, when given, receives how many ids each entry yielded.
+   */
+  function resolveTiles(show, liveIds, perEntry) {
+    show = Array.isArray(show) ? show : [];
+    var live = (Array.isArray(liveIds) ? liveIds : []).slice().sort(byString);
+    var liveSet = {};
+    var exact = {};
+    var seen = {};
+    var out = [];
+    var i;
+    for (i = 0; i < live.length; i++) liveSet[live[i]] = true;
+    for (i = 0; i < show.length; i++) if (!isPattern(show[i])) exact[show[i]] = true;
+    for (i = 0; i < show.length; i++) {
+      var e = show[i];
+      var before = out.length;
+      if (isPattern(e)) {
+        var prefix = e.slice(0, -1);
+        for (var j = 0; j < live.length; j++) {
+          var id = live[j];
+          if (id.indexOf(prefix) === 0 && !exact[id] && !seen[id]) {
+            out.push(id);
+            seen[id] = true;
+          }
+        }
+      } else if (liveSet[e] && !seen[e]) {
+        out.push(e);
+        seen[e] = true;
+      }
+      if (perEntry) perEntry.push(out.length - before);
+    }
+    return out;
+  }
+
+  /** { show, source } for a display profile, or null before the config arrives. */
+  function tileProfile(state, surface) {
+    var cfg = topic(state, "complications.config");
+    var surfaces = cfg && cfg.surfaces;
+    if (!surfaces || typeof surfaces !== "object") return null;
+    var p = surfaces[surface] || surfaces["default"];
+    return p && Array.isArray(p.show) ? p : null;
+  }
+
+  /** Live records by app_id. */
+  function liveTiles(state) {
+    var live = topic(state, "complications.live");
+    var out = {};
+    if (!Array.isArray(live)) return out;
+    for (var i = 0; i < live.length; i++) {
+      var c = live[i];
+      if (c && typeof c.app_id === "string") out[c.app_id] = c;
+    }
+    return out;
+  }
+
+  /**
+   * The tiles a surface shows, in configured order, uncut: [{ app_id, label,
+   * value, status, short, detail, icon }], or null when the server has no
+   * tiles or the config and live set have not both arrived (the caller falls
+   * back to the legacy rendering).
+   */
+  function tilesFor(state, surface) {
+    if (!hasTiles(state)) return null;
+    var prof = tileProfile(state, surface);
+    if (!prof || !Array.isArray(topic(state, "complications.live"))) return null;
+    var byId = liveTiles(state);
+    var ids = resolveTiles(prof.show, Object.keys(byId));
+    var out = [];
+    for (var i = 0; i < ids.length; i++) {
+      var c = byId[ids[i]];
+      out.push(assign({}, c, { status: tileStatus(c.status) }));
+    }
+    return out;
+  }
+
+  /** The welcome's roles allow complications.configure (operator or higher). */
+  function canConfigure(state) {
+    var roles = state.welcome && state.welcome.roles;
+    if (!Array.isArray(roles)) return false;
+    return roles.indexOf("operator") !== -1 || roles.indexOf("admin") !== -1;
+  }
+
+  /** A complications.configure for `surface` is waiting for its reply. */
+  function configuring(state, surface) {
+    for (var id in state.pending) {
+      var p = state.pending[id];
+      if (p.kind === "configure" && (!surface || p.surface === surface)) return true;
+    }
+    return false;
+  }
+
   return {
     STATUS: STATUS,
+    TILES_FEATURE: TILES_FEATURE,
+    TILE_TOPICS: TILE_TOPICS,
+    TILE_STATUSES: TILE_STATUSES,
+    hasTiles: hasTiles,
+    tileStatus: tileStatus,
+    isPattern: isPattern,
+    resolveTiles: resolveTiles,
+    tileProfile: tileProfile,
+    liveTiles: liveTiles,
+    tilesFor: tilesFor,
+    canConfigure: canConfigure,
+    configuring: configuring,
     RESULT_LRU: RESULT_LRU,
     MAX_ROWS: MAX_ROWS,
     createState: createState,

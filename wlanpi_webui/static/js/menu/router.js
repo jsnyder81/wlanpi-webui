@@ -4,9 +4,12 @@
  *   /menu                      Home
  *   /menu#network              branch page
  *   /menu#network.interfaces   action page
+ *   /menu#/tiles               status tiles customize page (client-owned)
  *
  * The hash is the node id exactly as the server sent it; the client builds no
  * paths. A hash that is not in the current menu resolves to "not-available".
+ * Hashes starting with "/" are the client's own pages: a node id always
+ * starts with a letter, so they never collide with the server's menu.
  */
 (function (root, factory) {
   if (typeof module === "object" && module.exports) {
@@ -23,7 +26,11 @@
     BRANCH: "branch",
     ACTION: "action",
     NOT_AVAILABLE: "not-available",
+    TILES: "tiles",
   };
+
+  /** Client-owned pages, by hash. */
+  var TILES_ID = "/tiles";
 
   /** "#network.interfaces" -> "network.interfaces"; "", "#" -> "" (Home). */
   function parseHash(hash) {
@@ -40,6 +47,7 @@
   /** Node id -> href for a link ("#" is Home). */
   function hrefFor(id) {
     if (!id) return "#";
+    if (id.charAt(0) === "/") return "#" + id;
     return "#" + encodeURIComponent(id).replace(/%2E/gi, ".");
   }
 
@@ -52,6 +60,7 @@
     var id = parseHash(hash);
     if (!state || !state.menu) return { type: TYPE.LOADING, id: id, node: null };
     if (!id) return { type: TYPE.HOME, id: "", node: null };
+    if (id === TILES_ID) return { type: TYPE.TILES, id: id, node: null };
     var byId = state.menu.byId;
     var node = Object.prototype.hasOwnProperty.call(byId, id) ? byId[id] : null;
     if (!node) return { type: TYPE.NOT_AVAILABLE, id: id, node: null };
@@ -78,6 +87,7 @@
 
   return {
     TYPE: TYPE,
+    TILES_ID: TILES_ID,
     parseHash: parseHash,
     hrefFor: hrefFor,
     resolve: resolve,
